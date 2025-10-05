@@ -22,7 +22,7 @@ import {
   ProviderContact
 } from "../types";
 import {
-  handleMessage as handleWhatsappMessage,
+  handleMessage,
   handleMessageAck,
   ContactPayload,
   MessagePayload,
@@ -174,46 +174,66 @@ const convertToMediaPayload = async (
   };
 };
 
-const isValidMsg = (msg: WbotMessage): boolean => {
+const shouldHandleMessage = (msg: WbotMessage): boolean => {
   if (msg.from === "status@broadcast") return false;
+
   if (
-    msg.type === "chat" ||
-    msg.type === "audio" ||
-    msg.type === "ptt" ||
-    msg.type === "video" ||
-    msg.type === "image" ||
-    msg.type === "document" ||
-    msg.type === "vcard" ||
-    msg.type === "sticker" ||
-    msg.type === "location"
+    !(
+      msg.type === "chat" ||
+      msg.type === "audio" ||
+      msg.type === "ptt" ||
+      msg.type === "video" ||
+      msg.type === "image" ||
+      msg.type === "document" ||
+      msg.type === "vcard" ||
+      msg.type === "sticker" ||
+      msg.type === "location"
+    )
   ) {
-    return true;
+    return false;
   }
-  return false;
+
+  // Check for Unicode direction mark
+  if (/\u200e/.test(msg.body[0])) return false;
+
+  // Additional validation for messages from me
+  if (msg.fromMe) {
+    if (
+      !msg.hasMedia &&
+      msg.type !== "location" &&
+      msg.type !== "chat" &&
+      msg.type !== "vcard"
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 };
 
-const handleMessage = async (
+const getMessageData = async (
   msg: WbotMessage,
   wbot: Session
-): Promise<void> => {
-  if (!isValidMsg(msg)) {
-    return;
-  }
-
+): Promise<{
+  messagePayload: MessagePayload;
+  contactPayload: ContactPayload;
+  contextPayload: WhatsappContextPayload;
+  mediaPayload: MediaPayload | undefined;
+}> => {
   try {
     let msgContact: WbotContact;
     let groupContact: ContactPayload | undefined;
 
     if (msg.fromMe) {
-      if (/\u200e/.test(msg.body[0])) return;
+      // if (/\u200e/.test(msg.body[0])) return;
 
-      if (
-        !msg.hasMedia &&
-        msg.type !== "location" &&
-        msg.type !== "chat" &&
-        msg.type !== "vcard"
-      )
-        return;
+      // if (
+      //   !msg.hasMedia &&
+      //   msg.type !== "location" &&
+      //   msg.type !== "chat" &&
+      //   msg.type !== "vcard"
+      // )
+      //   return;
 
       msgContact = await wbot.getContactById(msg.to);
     } else {
@@ -246,19 +266,22 @@ const handleMessage = async (
       groupContact
     };
 
-    await handleWhatsappMessage(
+    // await handleWhatsappMessage(
+    //   messagePayload,
+    //   contactPayload,
+    //   contextPayload,
+    //   mediaPayload
+    // );
+
+    return {
       messagePayload,
       contactPayload,
       contextPayload,
       mediaPayload
-    );
+    };
   } catch (err) {
-    logger.error(`Error handling whatsapp message: ${err}`);
+    throw new Error(`Error handling whatsapp message: ${err}`);
   }
-};
-
-const handleMsgAck = async (msg: WbotMessage, ack: any) => {
-  await handleMessageAck(msg.id.id, mapMessageAck(ack));
 };
 
 const syncUnreadMessages = async (wbot: Session) => {
@@ -273,7 +296,21 @@ const syncUnreadMessages = async (wbot: Session) => {
       });
 
       for (const msg of unreadMessages) {
-        await handleMessage(msg, wbot);
+        if (shouldHandleMessage(msg)) {
+          const {
+            messagePayload,
+            contactPayload,
+            contextPayload,
+            mediaPayload
+          } = await getMessageData(msg, wbot);
+
+          handleMessage(
+            messagePayload,
+            contactPayload,
+            contextPayload,
+            mediaPayload
+          );
+        }
       }
 
       await chat.sendSeen();
@@ -424,7 +461,6 @@ const deleteMessage = async (
 const init = async (whatsapp: Whatsapp): Promise<void> => {
   return new Promise((resolve, reject) => {
     try {
-      // Garantir que não temos sessões duplicadas
       removeSession(whatsapp.id);
 
       const io = getIO();
@@ -560,15 +596,43 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         });
 
         wbot.on("message_create", async msg => {
-          handleMessage(msg, wbot);
+          if (!shouldHandleMessage(msg)) return;
+
+          const {
+            messagePayload,
+            contactPayload,
+            contextPayload,
+            mediaPayload
+          } = await getMessageData(msg, wbot);
+
+          handleMessage(
+            messagePayload,
+            contactPayload,
+            contextPayload,
+            mediaPayload
+          );
         });
 
         wbot.on("media_uploaded", async msg => {
-          handleMessage(msg, wbot);
+          if (!shouldHandleMessage(msg)) return;
+
+          const {
+            messagePayload,
+            contactPayload,
+            contextPayload,
+            mediaPayload
+          } = await getMessageData(msg, wbot);
+
+          handleMessage(
+            messagePayload,
+            contactPayload,
+            contextPayload,
+            mediaPayload
+          );
         });
 
         wbot.on("message_ack", async (msg, ack) => {
-          handleMsgAck(msg, ack);
+          handleMessageAck(msg.id.id, mapMessageAck(ack));
         });
 
         resolve();
