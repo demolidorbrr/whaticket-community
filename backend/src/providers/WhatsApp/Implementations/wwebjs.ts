@@ -4,16 +4,13 @@ import {
   LocalAuth,
   MessageMedia,
   Message as WbotMessage,
+  Contact as WbotContact,
   MessageSendOptions
 } from "whatsapp-web.js";
 import { getIO } from "../../../libs/socket";
 import Whatsapp from "../../../models/Whatsapp";
 import AppError from "../../../errors/AppError";
 import { logger } from "../../../utils/logger";
-import {
-  wbotMessageListener,
-  handleMessage
-} from "../../../services/WbotServices/wbotMessageListener";
 import { WhatsappProvider } from "../whatsappProvider";
 import {
   ProviderMessage,
@@ -24,6 +21,16 @@ import {
   MessageAck,
   ProviderContact
 } from "../types";
+import {
+  handleMessage as handleWhatsappMessage,
+  handleMessageAck,
+  ContactPayload,
+  MessagePayload,
+  MediaPayload,
+  WhatsappContextPayload
+} from "../../../handlers/handleWhatsappEvents";
+import Message from "../../../models/Message";
+import { StartWhatsAppSession } from "../../../services/WbotServices/StartWhatsAppSession";
 
 interface Session extends Client {
   id?: number;
@@ -31,7 +38,6 @@ interface Session extends Client {
 
 const sessions: Session[] = [];
 
-// Utility functions
 const getWbot = (whatsappId: number): Session => {
   const sessionIndex = sessions.findIndex(s => s.id === whatsappId);
 
@@ -58,11 +64,11 @@ const mapMessageType = (wbotType: any): MessageType => {
 
 const mapMessageAck = (wbotAck: any): MessageAck => {
   const ackMap: Record<number, MessageAck> = {
-    0: 0, // PENDING
-    1: 1, // SERVER
-    2: 2, // DEVICE
-    3: 3, // READ
-    4: 4 // PLAYED
+    0: 0,
+    1: 1,
+    2: 2,
+    3: 3,
+    4: 4
   };
   return ackMap[wbotAck] || 0;
 };
@@ -94,6 +100,173 @@ const getSerializedMessageId = (
   return serializedMsgId;
 };
 
+const convertToContactPayload = async (
+  msgContact: WbotContact
+): Promise<ContactPayload> => {
+  const profilePicUrl = await msgContact.getProfilePicUrl();
+
+  return {
+    id: msgContact.id.user,
+    name: msgContact.name || msgContact.pushname || msgContact.id.user,
+    number: msgContact.id.user,
+    profilePicUrl,
+    isGroup: msgContact.isGroup
+  };
+};
+
+const verifyQuotedMessage = async (
+  msg: WbotMessage
+): Promise<string | undefined> => {
+  if (!msg.hasQuotedMsg) return undefined;
+
+  const wbotQuotedMsg = await msg.getQuotedMessage();
+  const quotedMsg = await Message.findOne({
+    where: { id: wbotQuotedMsg.id.id }
+  });
+
+  return quotedMsg?.id;
+};
+
+const prepareLocation = (msg: WbotMessage): WbotMessage => {
+  const { location } = msg as any;
+  const gmapsUrl = `https://maps.google.com/maps?q=${location.latitude}%2C${location.longitude}&z=17&hl=pt-BR`;
+
+  msg.body = `data:image/png;base64,${msg.body}|${gmapsUrl}`;
+  msg.body += `|${
+    location.description
+      ? location.description
+      : `${location.latitude}, ${location.longitude}`
+  }`;
+
+  return msg;
+};
+
+const convertToMessagePayload = async (
+  msg: WbotMessage
+): Promise<MessagePayload> => {
+  let processedMsg = msg;
+  if (msg.type === "location") {
+    processedMsg = prepareLocation(msg);
+  }
+
+  const quotedMsgId = await verifyQuotedMessage(processedMsg);
+
+  return {
+    id: processedMsg.id.id,
+    body: processedMsg.body,
+    fromMe: processedMsg.fromMe,
+    hasMedia: processedMsg.hasMedia,
+    type: mapMessageType(processedMsg.type),
+    timestamp: processedMsg.timestamp,
+    from: processedMsg.from,
+    to: processedMsg.to,
+    hasQuotedMsg: processedMsg.hasQuotedMsg,
+    quotedMsgId
+  };
+};
+
+const convertToMediaPayload = async (
+  msg: WbotMessage
+): Promise<MediaPayload | undefined> => {
+  if (!msg.hasMedia) return undefined;
+
+  const media = await msg.downloadMedia();
+  if (!media) return undefined;
+
+  return {
+    filename: media.filename || "",
+    mimetype: media.mimetype,
+    data: media.data
+  };
+};
+
+const isValidMsg = (msg: WbotMessage): boolean => {
+  if (msg.from === "status@broadcast") return false;
+  if (
+    msg.type === "chat" ||
+    msg.type === "audio" ||
+    msg.type === "ptt" ||
+    msg.type === "video" ||
+    msg.type === "image" ||
+    msg.type === "document" ||
+    msg.type === "vcard" ||
+    msg.type === "sticker" ||
+    msg.type === "location"
+  ) {
+    return true;
+  }
+  return false;
+};
+
+const handleMessage = async (
+  msg: WbotMessage,
+  wbot: Session
+): Promise<void> => {
+  if (!isValidMsg(msg)) {
+    return;
+  }
+
+  try {
+    let msgContact: WbotContact;
+    let groupContact: ContactPayload | undefined;
+
+    if (msg.fromMe) {
+      if (/\u200e/.test(msg.body[0])) return;
+
+      if (
+        !msg.hasMedia &&
+        msg.type !== "location" &&
+        msg.type !== "chat" &&
+        msg.type !== "vcard"
+      )
+        return;
+
+      msgContact = await wbot.getContactById(msg.to);
+    } else {
+      msgContact = await msg.getContact();
+    }
+
+    const chat = await msg.getChat();
+
+    if (chat.isGroup) {
+      let msgGroupContact;
+
+      if (msg.fromMe) {
+        msgGroupContact = await wbot.getContactById(msg.to);
+      } else {
+        msgGroupContact = await wbot.getContactById(msg.from);
+      }
+
+      groupContact = await convertToContactPayload(msgGroupContact);
+    }
+
+    const unreadMessages = msg.fromMe ? 0 : chat.unreadCount;
+
+    const contactPayload = await convertToContactPayload(msgContact);
+    const messagePayload = await convertToMessagePayload(msg);
+    const mediaPayload = await convertToMediaPayload(msg);
+
+    const contextPayload: WhatsappContextPayload = {
+      whatsappId: wbot.id!,
+      unreadMessages,
+      groupContact
+    };
+
+    await handleWhatsappMessage(
+      messagePayload,
+      contactPayload,
+      contextPayload,
+      mediaPayload
+    );
+  } catch (err) {
+    logger.error(`Error handling whatsapp message: ${err}`);
+  }
+};
+
+const handleMsgAck = async (msg: WbotMessage, ack: any) => {
+  await handleMessageAck(msg.id.id, mapMessageAck(ack));
+};
+
 const syncUnreadMessages = async (wbot: Session) => {
   const chats = await wbot.getChats();
 
@@ -119,6 +292,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     try {
       const io = getIO();
       const sessionName = whatsapp.name;
+      console.log("🚀 ~ sessionName:", sessionName);
       let sessionCfg;
 
       if (whatsapp && whatsapp.session) {
@@ -206,8 +380,49 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         wbot.sendPresenceAvailable();
         await syncUnreadMessages(wbot);
 
-        // Connect the existing wbotMessageListener to this session
-        wbotMessageListener(wbot);
+        wbot.on("change_state", async newState => {
+          logger.info(`Monitor session: ${sessionName}, ${newState}`);
+          try {
+            await whatsapp.update({ status: newState });
+          } catch (err) {
+            logger.error(err);
+          }
+
+          io.emit("whatsappSession", {
+            action: "update",
+            session: whatsapp
+          });
+        });
+
+        wbot.on("disconnected", async reason => {
+          logger.info(
+            `Disconnected session: ${sessionName}, reason: ${reason}`
+          );
+          try {
+            await whatsapp.update({ status: "OPENING", session: "" });
+          } catch (err) {
+            logger.error(err);
+          }
+
+          io.emit("whatsappSession", {
+            action: "update",
+            session: whatsapp
+          });
+
+          setTimeout(() => StartWhatsAppSession(whatsapp), 2000);
+        });
+
+        wbot.on("message_create", async msg => {
+          handleMessage(msg, wbot);
+        });
+
+        wbot.on("media_uploaded", async msg => {
+          handleMessage(msg, wbot);
+        });
+
+        wbot.on("message_ack", async (msg, ack) => {
+          handleMsgAck(msg, ack);
+        });
 
         resolve();
       });
@@ -326,14 +541,13 @@ const fetchChatMessages = async (
 const getContacts = async (sessionId: number): Promise<ProviderContact[]> => {
   const wbot = getWbot(sessionId);
   const contacts = await wbot.getContacts();
-  console.log("🚀 ~ contacts:", contacts);
 
   return contacts.map(contact => ({
     id: contact.id.user,
     name: contact.name || contact.pushname,
     pushname: contact.pushname,
     number: contact.id.user,
-    profilePicUrl: undefined, // getProfilePicUrl would need to be called separately
+    profilePicUrl: undefined,
     isGroup: contact.isGroup
   }));
 };
