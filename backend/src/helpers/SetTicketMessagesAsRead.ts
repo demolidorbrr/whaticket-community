@@ -2,7 +2,7 @@ import { getIO } from "../libs/socket";
 import Message from "../models/Message";
 import Ticket from "../models/Ticket";
 import { logger } from "../utils/logger";
-import GetTicketWbot from "./GetTicketWbot";
+import { whatsappProvider } from "../providers/WhatsApp";
 
 const SetTicketMessagesAsRead = async (ticket: Ticket): Promise<void> => {
   await Message.update(
@@ -18,10 +18,12 @@ const SetTicketMessagesAsRead = async (ticket: Ticket): Promise<void> => {
   await ticket.update({ unreadMessages: 0 });
 
   try {
-    const wbot = await GetTicketWbot(ticket);
-    await wbot.sendSeen(
-      `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`
-    );
+    if (ticket.whatsappId) {
+      await whatsappProvider.sendSeen(
+        ticket.whatsappId,
+        `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`
+      );
+    }
   } catch (err) {
     logger.warn(
       `Could not mark messages as read. Maybe whatsapp session disconnected? Err: ${err}`

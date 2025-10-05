@@ -1,10 +1,7 @@
-import { Message as WbotMessage } from "whatsapp-web.js";
 import AppError from "../../errors/AppError";
-import GetTicketWbot from "../../helpers/GetTicketWbot";
-import GetWbotMessage from "../../helpers/GetWbotMessage";
-import SerializeWbotMsgId from "../../helpers/SerializeWbotMsgId";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
+import { whatsappProvider, ProviderMessage } from "../../providers/WhatsApp";
 
 import formatBody from "../../helpers/Mustache";
 
@@ -18,21 +15,21 @@ const SendWhatsAppMessage = async ({
   body,
   ticket,
   quotedMsg
-}: Request): Promise<WbotMessage> => {
-  let quotedMsgSerializedId: string | undefined;
-  if (quotedMsg) {
-    await GetWbotMessage(ticket, quotedMsg.id);
-    quotedMsgSerializedId = SerializeWbotMsgId(ticket, quotedMsg);
+}: Request): Promise<ProviderMessage> => {
+  if (!ticket.whatsappId) {
+    throw new AppError("ERR_TICKET_NO_WHATSAPP");
   }
 
-  const wbot = await GetTicketWbot(ticket);
+  const chatId = `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`;
 
   try {
-    const sentMessage = await wbot.sendMessage(
-      `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`,
+    const sentMessage = await whatsappProvider.sendMessage(
+      ticket.whatsappId,
+      chatId,
       formatBody(body, ticket.contact),
       {
-        quotedMessageId: quotedMsgSerializedId,
+        quotedMessageId: quotedMsg?.id,
+        quotedMessageFromMe: quotedMsg?.fromMe,
         linkPreview: false
       }
     );

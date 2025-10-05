@@ -1,14 +1,15 @@
 import AppError from "../../errors/AppError";
 import GetDefaultWhatsApp from "../../helpers/GetDefaultWhatsApp";
-import { getWbot } from "../../libs/wbot";
+import { whatsappProvider } from "../../providers/WhatsApp";
 
 const CheckIsValidContact = async (number: string): Promise<void> => {
   const defaultWhatsapp = await GetDefaultWhatsApp();
 
-  const wbot = getWbot(defaultWhatsapp.id);
-
   try {
-    const isValidNumber = await wbot.isRegisteredUser(`${number}@c.us`);
+    const isValidNumber = await whatsappProvider.checkNumber(
+      defaultWhatsapp.id,
+      number
+    );
     if (!isValidNumber) {
       throw new AppError("invalidNumber");
     }

@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
-import { removeWbot } from "../libs/wbot";
 import { StartWhatsAppSession } from "../services/WbotServices/StartWhatsAppSession";
 
 import CreateWhatsAppService from "../services/WhatsappService/CreateWhatsAppService";
@@ -8,6 +7,7 @@ import DeleteWhatsAppService from "../services/WhatsappService/DeleteWhatsAppSer
 import ListWhatsAppsService from "../services/WhatsappService/ListWhatsAppsService";
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import UpdateWhatsAppService from "../services/WhatsappService/UpdateWhatsAppService";
+import { whatsappProvider } from "../providers/WhatsApp";
 
 interface WhatsappData {
   name: string;
@@ -104,7 +104,7 @@ export const remove = async (
   const { whatsappId } = req.params;
 
   await DeleteWhatsAppService(whatsappId);
-  removeWbot(+whatsappId);
+  whatsappProvider.removeSession(+whatsappId);
 
   const io = getIO();
   io.emit("whatsapp", {

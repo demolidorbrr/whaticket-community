@@ -1,12 +1,7 @@
 import fs from "fs";
-import {
-  MessageMedia,
-  Message as WbotMessage,
-  MessageSendOptions
-} from "whatsapp-web.js";
 import AppError from "../../errors/AppError";
-import GetTicketWbot from "../../helpers/GetTicketWbot";
 import Ticket from "../../models/Ticket";
+import { whatsappProvider, ProviderMessage } from "../../providers/WhatsApp";
 
 import formatBody from "../../helpers/Mustache";
 
@@ -20,30 +15,36 @@ const SendWhatsAppMedia = async ({
   media,
   ticket,
   body
-}: Request): Promise<WbotMessage> => {
+}: Request): Promise<ProviderMessage> => {
   try {
-    const wbot = await GetTicketWbot(ticket);
+    if (!ticket.whatsappId) {
+      throw new AppError("ERR_TICKET_NO_WHATSAPP");
+    }
+
+    const chatId = `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`;
+
     const hasBody = body
       ? formatBody(body as string, ticket.contact)
       : undefined;
 
-    const newMedia = MessageMedia.fromFilePath(media.path);
-
-    let mediaOptions: MessageSendOptions = {
-      caption: hasBody,
-      sendAudioAsVoice: true
+    const mediaInput = {
+      filename: media.filename,
+      mimetype: media.mimetype,
+      path: media.path
     };
 
-    if (
-      newMedia.mimetype.startsWith("image/") &&
-      !/^.*\.(jpe?g|png|gif)?$/i.exec(media.filename)
-    ) {
-      mediaOptions["sendMediaAsDocument"] = true;
-    }
+    const mediaOptions = {
+      caption: hasBody,
+      sendAudioAsVoice: true,
+      sendMediaAsDocument:
+        media.mimetype.startsWith("image/") &&
+        !/^.*\.(jpe?g|png|gif)?$/i.exec(media.filename)
+    };
 
-    const sentMessage = await wbot.sendMessage(
-      `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`,
-      newMedia,
+    const sentMessage = await whatsappProvider.sendMedia(
+      ticket.whatsappId,
+      chatId,
+      mediaInput,
       mediaOptions
     );
 

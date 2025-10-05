@@ -1,8 +1,6 @@
-import { initWbot } from "../../libs/wbot";
 import Whatsapp from "../../models/Whatsapp";
-import { wbotMessageListener } from "./wbotMessageListener";
+import { whatsappProvider } from "../../providers/WhatsApp";
 import { getIO } from "../../libs/socket";
-import wbotMonitor from "./wbotMonitor";
 import { logger } from "../../utils/logger";
 
 export const StartWhatsAppSession = async (
@@ -17,9 +15,7 @@ export const StartWhatsAppSession = async (
   });
 
   try {
-    const wbot = await initWbot(whatsapp);
-    wbotMessageListener(wbot);
-    wbotMonitor(wbot, whatsapp);
+    await whatsappProvider.init(whatsapp);
   } catch (err) {
     logger.error(err);
   }
