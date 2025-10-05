@@ -1,22 +1,15 @@
-export enum MessageType {
-  CHAT = "chat",
-  AUDIO = "audio",
-  PTT = "ptt",
-  VIDEO = "video",
-  IMAGE = "image",
-  DOCUMENT = "document",
-  VCARD = "vcard",
-  STICKER = "sticker",
-  LOCATION = "location"
-}
+export type MessageType =
+  | "chat"
+  | "audio"
+  | "ptt"
+  | "video"
+  | "image"
+  | "document"
+  | "vcard"
+  | "sticker"
+  | "location";
 
-export enum MessageAck {
-  PENDING = 0,
-  SERVER = 1,
-  DEVICE = 2,
-  READ = 3,
-  PLAYED = 4
-}
+export type MessageAck = 0 | 1 | 2 | 3 | 4; // PENDING, SERVER, DEVICE, READ, PLAYED
 
 export interface ProviderMessage {
   id: string;
@@ -29,11 +22,4 @@ export interface ProviderMessage {
   to: string;
   hasQuotedMsg?: boolean;
   ack?: MessageAck;
-  delete: (param: boolean) => Promise<void>;
-}
-
-export interface ProviderQuotedMessage {
-  id: string;
-  body: string;
-  fromMe: boolean;
 }

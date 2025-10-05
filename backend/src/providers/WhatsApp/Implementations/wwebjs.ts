@@ -43,28 +43,28 @@ const getWbot = (whatsappId: number): Session => {
 
 const mapMessageType = (wbotType: any): MessageType => {
   const typeMap: Record<string, MessageType> = {
-    chat: MessageType.CHAT,
-    audio: MessageType.AUDIO,
-    ptt: MessageType.PTT,
-    video: MessageType.VIDEO,
-    image: MessageType.IMAGE,
-    document: MessageType.DOCUMENT,
-    vcard: MessageType.VCARD,
-    sticker: MessageType.STICKER,
-    location: MessageType.LOCATION
+    chat: "chat",
+    audio: "audio",
+    ptt: "ptt",
+    video: "video",
+    image: "image",
+    document: "document",
+    vcard: "vcard",
+    sticker: "sticker",
+    location: "location"
   };
-  return typeMap[wbotType] || MessageType.CHAT;
+  return typeMap[wbotType] || "chat";
 };
 
 const mapMessageAck = (wbotAck: any): MessageAck => {
   const ackMap: Record<number, MessageAck> = {
-    0: MessageAck.PENDING,
-    1: MessageAck.SERVER,
-    2: MessageAck.DEVICE,
-    3: MessageAck.READ,
-    4: MessageAck.PLAYED
+    0: 0, // PENDING
+    1: 1, // SERVER
+    2: 2, // DEVICE
+    3: 3, // READ
+    4: 4 // PLAYED
   };
-  return ackMap[wbotAck] || MessageAck.PENDING;
+  return ackMap[wbotAck] || 0;
 };
 
 const convertToProviderMessage = (
@@ -80,8 +80,7 @@ const convertToProviderMessage = (
     from: wbotMessage.from,
     to: wbotMessage.to,
     hasQuotedMsg: wbotMessage.hasQuotedMsg,
-    ack: mapMessageAck(wbotMessage.ack),
-    delete: (param: boolean) => wbotMessage.delete(param)
+    ack: mapMessageAck(wbotMessage.ack)
   };
 };
 
