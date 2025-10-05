@@ -96,7 +96,7 @@ const saveMediaFile = async (mediaPayload: MediaPayload): Promise<string> => {
 
   try {
     await writeFileAsync(
-      join(__dirname, "..", "..", "..", "public", filename),
+      join(__dirname, "..", "..", "public", filename),
       mediaPayload.data,
       "base64"
     );
