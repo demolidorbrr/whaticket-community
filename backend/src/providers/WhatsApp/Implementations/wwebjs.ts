@@ -605,7 +605,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
             mediaPayload
           } = await getMessageData(msg, wbot);
 
-          handleMessage(
+          await handleMessage(
             messagePayload,
             contactPayload,
             contextPayload,
@@ -623,7 +623,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
             mediaPayload
           } = await getMessageData(msg, wbot);
 
-          handleMessage(
+          await handleMessage(
             messagePayload,
             contactPayload,
             contextPayload,
