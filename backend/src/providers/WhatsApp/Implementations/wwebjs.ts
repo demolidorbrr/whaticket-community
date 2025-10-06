@@ -459,188 +459,168 @@ const deleteMessage = async (
 };
 
 const init = async (whatsapp: Whatsapp): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    try {
-      removeSession(whatsapp.id);
+  try {
+    console.log("STARTING");
+    removeSession(whatsapp.id);
 
-      const io = getIO();
-      const sessionName = whatsapp.name;
-      let sessionCfg;
+    const io = getIO();
+    const sessionName = whatsapp.name;
+    let sessionCfg;
 
-      if (whatsapp && whatsapp.session) {
-        sessionCfg = JSON.parse(whatsapp.session);
+    if (whatsapp && whatsapp.session) {
+      sessionCfg = JSON.parse(whatsapp.session);
+    }
+
+    const args: string = process.env.CHROME_ARGS || "";
+
+    const wbot: Session = new Client({
+      session: sessionCfg,
+      authStrategy: new LocalAuth({ clientId: `bd_${whatsapp.id}` }),
+      puppeteer: {
+        executablePath: process.env.CHROME_BIN || undefined,
+        browserWSEndpoint: process.env.CHROME_WS || undefined,
+        args: args.split(" ")
+      }
+    });
+
+    await wbot.initialize();
+
+    wbot.on("qr", async qr => {
+      logger.info("Session:", sessionName);
+      qrCode.generate(qr, { small: true });
+      await whatsapp.update({ qrcode: qr, status: "qrcode", retries: 0 });
+
+      const sessionIndex = sessions.findIndex(s => s.id === whatsapp.id);
+      if (sessionIndex === -1) {
+        wbot.id = whatsapp.id;
+        sessions.push(wbot);
       }
 
-      const args: string = process.env.CHROME_ARGS || "";
+      io.emit("whatsappSession", {
+        action: "update",
+        session: whatsapp
+      });
+    });
 
-      const wbot: Session = new Client({
-        session: sessionCfg,
-        authStrategy: new LocalAuth({ clientId: `bd_${whatsapp.id}` }),
-        puppeteer: {
-          executablePath: process.env.CHROME_BIN || undefined,
-          browserWSEndpoint: process.env.CHROME_WS || undefined,
-          args: args.split(" ")
-        }
+    wbot.on("authenticated", async () => {
+      logger.info(`Session: ${sessionName} AUTHENTICATED`);
+    });
+
+    wbot.on("auth_failure", async msg => {
+      console.error(
+        `Session: ${sessionName} AUTHENTICATION FAILURE! Reason: ${msg}`
+      );
+
+      if (whatsapp.retries > 1) {
+        await whatsapp.update({ session: "", retries: 0 });
+      }
+
+      const retry = whatsapp.retries;
+      await whatsapp.update({
+        status: "DISCONNECTED",
+        retries: retry + 1
       });
 
-      wbot.initialize();
+      io.emit("whatsappSession", {
+        action: "update",
+        session: whatsapp
+      });
+    });
 
-      wbot.on("qr", async qr => {
-        logger.info("Session:", sessionName);
-        qrCode.generate(qr, { small: true });
-        await whatsapp.update({ qrcode: qr, status: "qrcode", retries: 0 });
+    wbot.on("ready", async () => {
+      logger.info(`Session: ${sessionName} READY`);
 
-        const sessionIndex = sessions.findIndex(s => s.id === whatsapp.id);
-        if (sessionIndex === -1) {
-          wbot.id = whatsapp.id;
-          sessions.push(wbot);
-        }
-
-        io.emit("whatsappSession", {
-          action: "update",
-          session: whatsapp
-        });
+      await whatsapp.update({
+        status: "CONNECTED",
+        qrcode: "",
+        retries: 0
       });
 
-      wbot.on("authenticated", async () => {
-        logger.info(`Session: ${sessionName} AUTHENTICATED`);
+      io.emit("whatsappSession", {
+        action: "update",
+        session: whatsapp
       });
 
-      wbot.on("auth_failure", async msg => {
-        console.error(
-          `Session: ${sessionName} AUTHENTICATION FAILURE! Reason: ${msg}`
-        );
+      const sessionIndex = sessions.findIndex(s => s.id === whatsapp.id);
+      if (sessionIndex === -1) {
+        wbot.id = whatsapp.id;
+        sessions.push(wbot);
+      }
 
-        if (whatsapp.retries > 1) {
-          await whatsapp.update({ session: "", retries: 0 });
-        }
+      wbot.sendPresenceAvailable();
+      await syncUnreadMessages(wbot);
+    });
 
-        const retry = whatsapp.retries;
-        await whatsapp.update({
-          status: "DISCONNECTED",
-          retries: retry + 1
-        });
+    wbot.on("change_state", async newState => {
+      logger.info(`Monitor session: ${sessionName}, ${newState}`);
+      try {
+        await whatsapp.update({ status: newState });
+      } catch (err) {
+        logger.error(err);
+      }
 
-        io.emit("whatsappSession", {
-          action: "update",
-          session: whatsapp
-        });
+      io.emit("whatsappSession", {
+        action: "update",
+        session: whatsapp
+      });
+    });
 
-        reject(new Error("Error starting whatsapp session."));
+    wbot.on("disconnected", async reason => {
+      logger.info(`Disconnected session: ${sessionName}, reason: ${reason}`);
+      try {
+        await whatsapp.update({ status: "OPENING", session: "" });
+      } catch (err) {
+        logger.error(err);
+      }
+
+      io.emit("whatsappSession", {
+        action: "update",
+        session: whatsapp
       });
 
-      wbot.on("ready", async () => {
-        logger.info(`Session: ${sessionName} READY`);
+      logger.warn(
+        `Session ${sessionName} disconnected. Restarting in 2 seconds...`
+      );
 
-        await whatsapp.update({
-          status: "CONNECTED",
-          qrcode: "",
-          retries: 0
-        });
+      await new Promise(r => setTimeout(r, 2000));
 
-        io.emit("whatsappSession", {
-          action: "update",
-          session: whatsapp
-        });
+      init(whatsapp);
+    });
 
-        const sessionIndex = sessions.findIndex(s => s.id === whatsapp.id);
-        if (sessionIndex === -1) {
-          wbot.id = whatsapp.id;
-          sessions.push(wbot);
-        }
+    wbot.on("message_create", async msg => {
+      if (!shouldHandleMessage(msg)) return;
 
-        wbot.sendPresenceAvailable();
-        await syncUnreadMessages(wbot);
+      const { messagePayload, contactPayload, contextPayload, mediaPayload } =
+        await getMessageData(msg, wbot);
 
-        wbot.on("change_state", async newState => {
-          logger.info(`Monitor session: ${sessionName}, ${newState}`);
-          try {
-            await whatsapp.update({ status: newState });
-          } catch (err) {
-            logger.error(err);
-          }
+      await handleMessage(
+        messagePayload,
+        contactPayload,
+        contextPayload,
+        mediaPayload
+      );
+    });
 
-          io.emit("whatsappSession", {
-            action: "update",
-            session: whatsapp
-          });
-        });
+    wbot.on("media_uploaded", async msg => {
+      if (!shouldHandleMessage(msg)) return;
 
-        wbot.on("disconnected", async reason => {
-          logger.info(
-            `Disconnected session: ${sessionName}, reason: ${reason}`
-          );
-          try {
-            await whatsapp.update({ status: "OPENING", session: "" });
-          } catch (err) {
-            logger.error(err);
-          }
+      const { messagePayload, contactPayload, contextPayload, mediaPayload } =
+        await getMessageData(msg, wbot);
 
-          io.emit("whatsappSession", {
-            action: "update",
-            session: whatsapp
-          });
+      await handleMessage(
+        messagePayload,
+        contactPayload,
+        contextPayload,
+        mediaPayload
+      );
+    });
 
-          logger.warn(
-            `Session ${sessionName} disconnected. Restarting in 2 seconds...`
-          );
-
-          setTimeout(async () => {
-            try {
-              await init(whatsapp);
-              logger.info(`Session ${sessionName} restarted successfully`);
-            } catch (err) {
-              logger.error(`Failed to restart session ${sessionName}: ${err}`);
-            }
-          }, 2000);
-        });
-
-        wbot.on("message_create", async msg => {
-          if (!shouldHandleMessage(msg)) return;
-
-          const {
-            messagePayload,
-            contactPayload,
-            contextPayload,
-            mediaPayload
-          } = await getMessageData(msg, wbot);
-
-          await handleMessage(
-            messagePayload,
-            contactPayload,
-            contextPayload,
-            mediaPayload
-          );
-        });
-
-        wbot.on("media_uploaded", async msg => {
-          if (!shouldHandleMessage(msg)) return;
-
-          const {
-            messagePayload,
-            contactPayload,
-            contextPayload,
-            mediaPayload
-          } = await getMessageData(msg, wbot);
-
-          await handleMessage(
-            messagePayload,
-            contactPayload,
-            contextPayload,
-            mediaPayload
-          );
-        });
-
-        wbot.on("message_ack", async (msg, ack) => {
-          handleMessageAck(msg.id.id, mapMessageAck(ack));
-        });
-
-        resolve();
-      });
-    } catch (err) {
-      logger.error(err);
-    }
-  });
+    wbot.on("message_ack", async (msg, ack) => {
+      handleMessageAck(msg.id.id, mapMessageAck(ack));
+    });
+  } catch (err) {
+    logger.error(err, "Error on whatsapp session");
+  }
 };
 
 export const WhatsappWebJsProvider: WhatsappProvider = {
