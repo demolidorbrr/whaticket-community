@@ -458,7 +458,6 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       session: sessionCfg,
       authStrategy: new LocalAuth({ clientId: `bd_${whatsapp.id}` }),
       puppeteer: {
-        headless: false,
         executablePath: process.env.CHROME_BIN || undefined,
         browserWSEndpoint: process.env.CHROME_WS || undefined,
         args: [
