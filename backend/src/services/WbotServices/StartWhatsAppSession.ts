@@ -15,6 +15,7 @@ export const StartWhatsAppSession = async (
   });
 
   try {
+    console.log("VAI!");
     await whatsappProvider.init(whatsapp);
   } catch (err) {
     logger.error(err);

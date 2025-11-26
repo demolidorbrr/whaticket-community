@@ -220,101 +220,85 @@ const getMessageData = async (
   contextPayload: WhatsappContextPayload;
   mediaPayload: MediaPayload | undefined;
 }> => {
-  try {
-    let msgContact: WbotContact;
-    let groupContact: ContactPayload | undefined;
+  let msgContact: WbotContact;
+  let groupContact: ContactPayload | undefined;
+
+  if (msg.fromMe) {
+    msgContact = await wbot.getContactById(msg.to);
+  } else {
+    msgContact = await msg.getContact();
+    console.log("🚀 ~ msgContact:", msgContact);
+  }
+
+  const chat = await msg.getChat();
+
+  if (chat.isGroup) {
+    let msgGroupContact;
 
     if (msg.fromMe) {
-      // if (/\u200e/.test(msg.body[0])) return;
-
-      // if (
-      //   !msg.hasMedia &&
-      //   msg.type !== "location" &&
-      //   msg.type !== "chat" &&
-      //   msg.type !== "vcard"
-      // )
-      //   return;
-
-      msgContact = await wbot.getContactById(msg.to);
+      msgGroupContact = await wbot.getContactById(msg.to);
     } else {
-      msgContact = await msg.getContact();
+      msgGroupContact = await wbot.getContactById(msg.from);
     }
 
-    const chat = await msg.getChat();
-
-    if (chat.isGroup) {
-      let msgGroupContact;
-
-      if (msg.fromMe) {
-        msgGroupContact = await wbot.getContactById(msg.to);
-      } else {
-        msgGroupContact = await wbot.getContactById(msg.from);
-      }
-
-      groupContact = await convertToContactPayload(msgGroupContact);
-    }
-
-    const unreadMessages = msg.fromMe ? 0 : chat.unreadCount;
-
-    const contactPayload = await convertToContactPayload(msgContact);
-    const messagePayload = await convertToMessagePayload(msg);
-    const mediaPayload = await convertToMediaPayload(msg);
-
-    const contextPayload: WhatsappContextPayload = {
-      whatsappId: wbot.id!,
-      unreadMessages,
-      groupContact
-    };
-
-    // await handleWhatsappMessage(
-    //   messagePayload,
-    //   contactPayload,
-    //   contextPayload,
-    //   mediaPayload
-    // );
-
-    return {
-      messagePayload,
-      contactPayload,
-      contextPayload,
-      mediaPayload
-    };
-  } catch (err) {
-    throw new Error(`Error handling whatsapp message: ${err}`);
+    groupContact = await convertToContactPayload(msgGroupContact);
   }
+
+  const unreadMessages = msg.fromMe ? 0 : chat.unreadCount;
+
+  const contactPayload = await convertToContactPayload(msgContact);
+  const messagePayload = await convertToMessagePayload(msg);
+  const mediaPayload = await convertToMediaPayload(msg);
+
+  const contextPayload: WhatsappContextPayload = {
+    whatsappId: wbot.id!,
+    unreadMessages,
+    groupContact
+  };
+
+  return {
+    messagePayload,
+    contactPayload,
+    contextPayload,
+    mediaPayload
+  };
 };
 
 const syncUnreadMessages = async (wbot: Session) => {
-  const chats = await wbot.getChats();
+  try {
+    const chats = await wbot.getChats();
 
-  /* eslint-disable no-restricted-syntax */
-  /* eslint-disable no-await-in-loop */
-  for (const chat of chats) {
-    if (chat.unreadCount > 0) {
-      const unreadMessages = await chat.fetchMessages({
-        limit: chat.unreadCount
-      });
+    /* eslint-disable no-restricted-syntax */
+    /* eslint-disable no-await-in-loop */
+    for (const chat of chats) {
+      if (chat.unreadCount > 0) {
+        const unreadMessages = await chat.fetchMessages({
+          limit: chat.unreadCount
+        });
 
-      for (const msg of unreadMessages) {
-        if (shouldHandleMessage(msg)) {
-          const {
-            messagePayload,
-            contactPayload,
-            contextPayload,
-            mediaPayload
-          } = await getMessageData(msg, wbot);
+        for (const msg of unreadMessages) {
+          if (shouldHandleMessage(msg)) {
+            const {
+              messagePayload,
+              contactPayload,
+              contextPayload,
+              mediaPayload
+            } = await getMessageData(msg, wbot);
 
-          handleMessage(
-            messagePayload,
-            contactPayload,
-            contextPayload,
-            mediaPayload
-          );
+            handleMessage(
+              messagePayload,
+              contactPayload,
+              contextPayload,
+              mediaPayload
+            );
+          }
         }
-      }
 
-      await chat.sendSeen();
+        await chat.sendSeen();
+      }
     }
+  } catch (err) {
+    logger.error(err, "Error syncing unread messages");
   }
 };
 
@@ -465,11 +449,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
     const io = getIO();
     const sessionName = whatsapp.name;
-    let sessionCfg;
-
-    if (whatsapp && whatsapp.session) {
-      sessionCfg = JSON.parse(whatsapp.session);
-    }
+    const sessionCfg = whatsapp?.session ? JSON.parse(whatsapp.session) : {};
+    console.log("🚀 ~ sessionCfg:", sessionCfg);
 
     const args: string = process.env.CHROME_ARGS || "";
 
@@ -477,13 +458,21 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       session: sessionCfg,
       authStrategy: new LocalAuth({ clientId: `bd_${whatsapp.id}` }),
       puppeteer: {
+        headless: false,
         executablePath: process.env.CHROME_BIN || undefined,
         browserWSEndpoint: process.env.CHROME_WS || undefined,
-        args: args.split(" ")
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-accelerated-2d-canvas",
+          "--no-first-run",
+          "--no-zygote",
+          "--disable-gpu",
+          ...args.split(" ")
+        ]
       }
     });
-
-    await wbot.initialize();
 
     wbot.on("qr", async qr => {
       logger.info("Session:", sessionName);
@@ -515,10 +504,9 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         await whatsapp.update({ session: "", retries: 0 });
       }
 
-      const retry = whatsapp.retries;
       await whatsapp.update({
         status: "DISCONNECTED",
-        retries: retry + 1
+        retries: whatsapp.retries + 1
       });
 
       io.emit("whatsappSession", {
@@ -530,94 +518,108 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     wbot.on("ready", async () => {
       logger.info(`Session: ${sessionName} READY`);
 
-      await whatsapp.update({
-        status: "CONNECTED",
-        qrcode: "",
-        retries: 0
-      });
+      try {
+        await whatsapp.update({
+          status: "CONNECTED",
+          qrcode: "",
+          retries: 0
+        });
 
-      io.emit("whatsappSession", {
-        action: "update",
-        session: whatsapp
-      });
+        io.emit("whatsappSession", {
+          action: "update",
+          session: whatsapp
+        });
 
-      const sessionIndex = sessions.findIndex(s => s.id === whatsapp.id);
-      if (sessionIndex === -1) {
-        wbot.id = whatsapp.id;
-        sessions.push(wbot);
+        const sessionIndex = sessions.findIndex(s => s.id === whatsapp.id);
+        if (sessionIndex === -1) {
+          wbot.id = whatsapp.id;
+          sessions.push(wbot);
+        }
+
+        wbot.sendPresenceAvailable();
+        await syncUnreadMessages(wbot);
+      } catch (err) {
+        logger.error(err, "Error on whatsapp ready event");
       }
-
-      wbot.sendPresenceAvailable();
-      await syncUnreadMessages(wbot);
     });
 
     wbot.on("change_state", async newState => {
       logger.info(`Monitor session: ${sessionName}, ${newState}`);
       try {
         await whatsapp.update({ status: newState });
-      } catch (err) {
-        logger.error(err);
-      }
 
-      io.emit("whatsappSession", {
-        action: "update",
-        session: whatsapp
-      });
+        io.emit("whatsappSession", {
+          action: "update",
+          session: whatsapp
+        });
+      } catch (err) {
+        logger.error(err, "Error on whatsapp change state event");
+      }
     });
 
     wbot.on("disconnected", async reason => {
       logger.info(`Disconnected session: ${sessionName}, reason: ${reason}`);
       try {
         await whatsapp.update({ status: "OPENING", session: "" });
+
+        io.emit("whatsappSession", {
+          action: "update",
+          session: whatsapp
+        });
+
+        logger.warn(
+          `Session ${sessionName} disconnected. Restarting in 2 seconds...`
+        );
+
+        await new Promise(r => setTimeout(r, 2000));
+
+        init(whatsapp);
       } catch (err) {
-        logger.error(err);
+        logger.error(err, "Error on whatsapp disconnected event");
       }
-
-      io.emit("whatsappSession", {
-        action: "update",
-        session: whatsapp
-      });
-
-      logger.warn(
-        `Session ${sessionName} disconnected. Restarting in 2 seconds...`
-      );
-
-      await new Promise(r => setTimeout(r, 2000));
-
-      init(whatsapp);
     });
 
     wbot.on("message_create", async msg => {
       if (!shouldHandleMessage(msg)) return;
 
-      const { messagePayload, contactPayload, contextPayload, mediaPayload } =
-        await getMessageData(msg, wbot);
+      try {
+        const { messagePayload, contactPayload, contextPayload, mediaPayload } =
+          await getMessageData(msg, wbot);
 
-      await handleMessage(
-        messagePayload,
-        contactPayload,
-        contextPayload,
-        mediaPayload
-      );
+        await handleMessage(
+          messagePayload,
+          contactPayload,
+          contextPayload,
+          mediaPayload
+        );
+      } catch (err) {
+        logger.error(err, "Error on whatsapp message create event");
+      }
     });
 
     wbot.on("media_uploaded", async msg => {
       if (!shouldHandleMessage(msg)) return;
 
-      const { messagePayload, contactPayload, contextPayload, mediaPayload } =
-        await getMessageData(msg, wbot);
+      try {
+        const { messagePayload, contactPayload, contextPayload, mediaPayload } =
+          await getMessageData(msg, wbot);
 
-      await handleMessage(
-        messagePayload,
-        contactPayload,
-        contextPayload,
-        mediaPayload
-      );
+        await handleMessage(
+          messagePayload,
+          contactPayload,
+          contextPayload,
+          mediaPayload
+        );
+      } catch (err) {
+        logger.error(err, "Error on whatsapp media uploaded event");
+      }
     });
 
     wbot.on("message_ack", async (msg, ack) => {
       handleMessageAck(msg.id.id, mapMessageAck(ack));
     });
+
+    await wbot.initialize();
   } catch (err) {
     logger.error(err, "Error on whatsapp session");
   }

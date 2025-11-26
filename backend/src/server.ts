@@ -11,3 +11,11 @@ const server = app.listen(process.env.PORT, () => {
 initIO(server);
 StartAllWhatsAppsSessions();
 gracefulShutdown(server);
+
+process.on("uncaughtException", err => {
+  logger.error({ info: "Global uncaught exception", err });
+});
+
+process.on("unhandledRejection", err => {
+  if (err) logger.error({ info: "Global unhandled rejection", err });
+});
