@@ -8,7 +8,12 @@ import makeWASocket, {
   isLidUser,
   isJidGroup,
   makeCacheableSignalKeyStore,
-  BufferJSON
+  BufferJSON,
+  WAMessage,
+  downloadMediaMessage,
+  getContentType,
+  jidNormalizedUser,
+  jidDecode
 } from "whaileys";
 import { Boom } from "@hapi/boom";
 import { HttpsProxyAgent } from "https-proxy-agent";
@@ -23,10 +28,20 @@ import {
   ProviderMessage,
   ProviderMediaInput,
   SendMediaOptions,
-  ProviderContact
+  ProviderContact,
+  MessageType,
+  MessageAck
 } from "../types";
 import { WhatsappProvider } from "../whatsappProvider";
 import { sleep } from "../../../utils/sleep";
+import {
+  handleMessage,
+  handleMessageAck,
+  ContactPayload,
+  MessagePayload,
+  MediaPayload,
+  WhatsappContextPayload
+} from "../../../handlers/handleWhatsappEvents";
 
 interface Session extends WASocket {
   id: number;
@@ -82,7 +97,7 @@ const useSessionAuthState = async (whatsapp: Whatsapp) => {
       keys: {
         get: async (type: string, ids: string[]) => {
           const data: any = {};
-          const deviceId = creds?.me?.id || "unknown";
+          const deviceId = jidDecode(creds?.me?.id)?.device || 1;
 
           try {
             await Promise.all(
@@ -107,7 +122,7 @@ const useSessionAuthState = async (whatsapp: Whatsapp) => {
           return data;
         },
         set: async (data: any) => {
-          const deviceId = creds?.me?.id || "unknown";
+          const deviceId = jidDecode(creds?.me?.id)?.device || 1;
 
           try {
             const promises: Promise<void>[] = [];
@@ -135,8 +150,309 @@ const useSessionAuthState = async (whatsapp: Whatsapp) => {
   };
 };
 
+const mapMessageType = (msg: WAMessage): MessageType => {
+  const messageType = getContentType(msg.message || undefined);
+
+  const typeMap: Record<string, MessageType> = {
+    conversation: "chat",
+    extendedTextMessage: "chat",
+    imageMessage: "image",
+    videoMessage: "video",
+    audioMessage: "audio",
+    documentMessage: "document",
+    stickerMessage: "sticker",
+    locationMessage: "location",
+    contactMessage: "vcard",
+    contactsArrayMessage: "vcard"
+  };
+
+  const mappedType = typeMap[messageType || ""];
+
+  if (messageType === "audioMessage") {
+    const audioMsg = msg.message?.audioMessage;
+    if (audioMsg?.ptt) {
+      return "ptt";
+    }
+  }
+
+  return mappedType || "chat";
+};
+
+const getMessageBody = (msg: WAMessage): string => {
+  try {
+    const messageType = getContentType(msg.message || undefined);
+
+    if (messageType === "conversation") {
+      return msg.message?.conversation || "";
+    }
+
+    if (messageType === "extendedTextMessage") {
+      return msg.message?.extendedTextMessage?.text || "";
+    }
+
+    if (messageType === "imageMessage") {
+      return msg.message?.imageMessage?.caption || "";
+    }
+
+    if (messageType === "videoMessage") {
+      return msg.message?.videoMessage?.caption || "";
+    }
+
+    if (messageType === "documentMessage") {
+      return msg.message?.documentMessage?.caption || "";
+    }
+
+    if (messageType === "contactMessage") {
+      return msg.message?.contactMessage?.vcard || "";
+    }
+
+    if (messageType === "contactsArrayMessage") {
+      const contacts = msg.message?.contactsArrayMessage?.contacts || [];
+      return contacts.map(c => c.vcard).join("\n");
+    }
+
+    if (messageType === "locationMessage") {
+      const location = msg.message?.locationMessage;
+      if (location) {
+        const gmapsUrl = `https://maps.google.com/maps?q=${location.degreesLatitude}%2C${location.degreesLongitude}&z=17&hl=pt-BR`;
+        const description =
+          location.name ||
+          `${location.degreesLatitude}, ${location.degreesLongitude}`;
+        return `${gmapsUrl}|${description}`;
+      }
+    }
+
+    return "";
+  } catch (err) {
+    logger.error({ info: "Error getting message body", err });
+    return "";
+  }
+};
+
+const getQuotedMessageId = (msg: WAMessage): string | undefined => {
+  const messageType = getContentType(msg.message || undefined);
+
+  if (messageType === "extendedTextMessage") {
+    const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+    return contextInfo?.stanzaId || undefined;
+  }
+
+  if (messageType === "imageMessage") {
+    const contextInfo = msg.message?.imageMessage?.contextInfo;
+    return contextInfo?.stanzaId || undefined;
+  }
+
+  if (messageType === "videoMessage") {
+    const contextInfo = msg.message?.videoMessage?.contextInfo;
+    return contextInfo?.stanzaId || undefined;
+  }
+
+  if (messageType === "documentMessage") {
+    const contextInfo = msg.message?.documentMessage?.contextInfo;
+    return contextInfo?.stanzaId || undefined;
+  }
+
+  return undefined;
+};
+
+const hasMedia = (msg: WAMessage): boolean => {
+  const messageType = getContentType(msg.message || undefined);
+  return [
+    "imageMessage",
+    "videoMessage",
+    "audioMessage",
+    "documentMessage",
+    "stickerMessage"
+  ].includes(messageType || "");
+};
+
+const shouldHandleMessage = (msg: WAMessage): boolean => {
+  const messageType = getContentType(msg.message || undefined);
+  const validTypes = [
+    "conversation",
+    "extendedTextMessage",
+    "imageMessage",
+    "videoMessage",
+    "audioMessage",
+    "documentMessage",
+    "stickerMessage",
+    "locationMessage",
+    "contactMessage",
+    "contactsArrayMessage"
+  ];
+
+  if (!validTypes.includes(messageType || "")) {
+    return false;
+  }
+
+  const body = getMessageBody(msg);
+  if (/\u200e/.test(body[0])) return false;
+
+  if (msg.key.fromMe) {
+    if (
+      !hasMedia(msg) &&
+      messageType !== "locationMessage" &&
+      messageType !== "conversation" &&
+      messageType !== "extendedTextMessage" &&
+      messageType !== "contactMessage"
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const convertToMessagePayload = (msg: WAMessage): MessagePayload => {
+  const fromJid = msg.key.remoteJid || "";
+  const toJid = msg.key.fromMe ? fromJid : msg.key.participant || fromJid;
+
+  return {
+    id: msg.key.id || "",
+    body: getMessageBody(msg),
+    fromMe: msg.key.fromMe || false,
+    hasMedia: hasMedia(msg),
+    type: mapMessageType(msg),
+    timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) : Date.now(),
+    from: fromJid,
+    to: toJid,
+    hasQuotedMsg: Boolean(getQuotedMessageId(msg)),
+    quotedMsgId: getQuotedMessageId(msg)
+  };
+};
+
+const convertToContactPayload = async (
+  wbot: Session,
+  jid: string
+): Promise<ContactPayload> => {
+  const normalizedJid = jidNormalizedUser(jid);
+  const [number] = normalizedJid.split("@");
+
+  const name = number;
+  let profilePicUrl: string | undefined;
+
+  try {
+    profilePicUrl = await wbot
+      .profilePictureUrl(normalizedJid, "image")
+      .catch(() => undefined);
+  } catch (err) {
+    logger.debug({ info: "Error getting profile picture", jid, err });
+  }
+
+  return {
+    id: number,
+    name,
+    number,
+    profilePicUrl,
+    isGroup: Boolean(isJidGroup(jid))
+  };
+};
+
+const convertToMediaPayload = async (
+  msg: WAMessage,
+  wbot: Session
+): Promise<MediaPayload | undefined> => {
+  if (!hasMedia(msg)) return undefined;
+
+  try {
+    const buffer = await downloadMediaMessage(
+      msg,
+      "buffer",
+      {},
+      { logger: logger as any, reuploadRequest: wbot.updateMediaMessage }
+    );
+
+    const messageType = getContentType(msg.message || undefined);
+    let filename = "";
+    let mimetype = "";
+
+    if (messageType === "imageMessage") {
+      const imageMsg = msg.message?.imageMessage;
+      mimetype = imageMsg?.mimetype || "image/jpeg";
+      const ext = mimetype.split("/")[1]?.split(";")[0] || "jpg";
+      filename = `image-${Date.now()}.${ext}`;
+    } else if (messageType === "videoMessage") {
+      const videoMsg = msg.message?.videoMessage;
+      mimetype = videoMsg?.mimetype || "video/mp4";
+      const ext = mimetype.split("/")[1]?.split(";")[0] || "mp4";
+      filename = `video-${Date.now()}.${ext}`;
+    } else if (messageType === "audioMessage") {
+      const audioMsg = msg.message?.audioMessage;
+      mimetype = audioMsg?.mimetype || "audio/ogg; codecs=opus";
+      filename = `audio-${Date.now()}.ogg`;
+    } else if (messageType === "documentMessage") {
+      const docMsg = msg.message?.documentMessage;
+      mimetype = docMsg?.mimetype || "application/octet-stream";
+      const ext = mimetype.split("/")[1]?.split(";")[0] || "bin";
+      filename = docMsg?.title || `document-${Date.now()}.${ext}`;
+    } else if (messageType === "stickerMessage") {
+      const stickerMsg = msg.message?.stickerMessage;
+      mimetype = stickerMsg?.mimetype || "image/webp";
+      filename = `sticker-${Date.now()}.webp`;
+    }
+
+    return {
+      filename,
+      mimetype,
+      data: buffer.toString("base64")
+    };
+  } catch (err) {
+    logger.error({
+      info: "Error downloading media",
+      err,
+      messageId: msg.key.id
+    });
+    return undefined;
+  }
+};
+
+const getMessageData = async (
+  msg: WAMessage,
+  wbot: Session
+): Promise<{
+  messagePayload: MessagePayload;
+  contactPayload: ContactPayload;
+  contextPayload: WhatsappContextPayload;
+  mediaPayload: MediaPayload | undefined;
+}> => {
+  const remoteJid = msg.key.remoteJid || "";
+  const isGroup = isJidGroup(remoteJid);
+
+  let contactJid: string;
+  let groupContact: ContactPayload | undefined;
+
+  if (msg.key.fromMe) {
+    contactJid = remoteJid;
+  } else if (isGroup) {
+    contactJid = remoteJid;
+    const participantJid = msg.key.participant || msg.participant || "";
+    if (participantJid) {
+      groupContact = await convertToContactPayload(wbot, participantJid);
+    }
+  } else {
+    contactJid = remoteJid;
+  }
+
+  const contactPayload = await convertToContactPayload(wbot, contactJid);
+  const messagePayload = convertToMessagePayload(msg);
+  const mediaPayload = await convertToMediaPayload(msg, wbot);
+
+  const contextPayload: WhatsappContextPayload = {
+    whatsappId: wbot.id,
+    unreadMessages: 0,
+    groupContact
+  };
+
+  return {
+    messagePayload,
+    contactPayload,
+    contextPayload,
+    mediaPayload
+  };
+};
+
 const removeSession = async (whatsappId: number): Promise<void> => {
-  sessions.delete(whatsappId); // todo check
+  sessions.delete(whatsappId);
 };
 
 const init = async (whatsapp: Whatsapp): Promise<void> => {
@@ -186,6 +502,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
   assertUnique(sessionId);
 
   const wbot = makeWASocket(connOptions) as Session;
+  wbot.id = sessionId;
 
   sessions.set(sessionId, wbot);
 
@@ -262,6 +579,64 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
       logger.info({ info: "QR Code generated", sessionId });
     }
+  });
+
+  wbot.ev.on("messages.upsert", async m => {
+    if (m.type !== "notify") return;
+
+    const validMessages = m.messages.filter(
+      msg => msg.message && shouldHandleMessage(msg)
+    );
+    console.log("🚀 ~ validMessages:", m.messages);
+
+    await Promise.all(
+      validMessages.map(async msg => {
+        try {
+          const {
+            messagePayload,
+            contactPayload,
+            contextPayload,
+            mediaPayload
+          } = await getMessageData(msg, wbot);
+
+          await handleMessage(
+            messagePayload,
+            contactPayload,
+            contextPayload,
+            mediaPayload
+          );
+        } catch (err) {
+          logger.error(err, "Error handling message upsert");
+        }
+      })
+    );
+  });
+
+  wbot.ev.on("messages.update", async updates => {
+    await Promise.all(
+      updates.map(async update => {
+        try {
+          if (update.update.status) {
+            const ackMap: Record<number, MessageAck> = {
+              0: 0,
+              1: 1,
+              2: 2,
+              3: 3,
+              4: 4
+            };
+
+            const ack = ackMap[update.update.status] || 0;
+            await handleMessageAck(update.key.id || "", ack);
+          }
+        } catch (err) {
+          logger.error({
+            info: "Error handling message update",
+            err,
+            messageId: update.key.id
+          });
+        }
+      })
+    );
   });
 };
 

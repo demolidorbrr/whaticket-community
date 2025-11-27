@@ -305,7 +305,14 @@ export const handleMessage = async (
     }
   } catch (err) {
     Sentry.captureException(err);
-    logger.error(`Error handling whatsapp message: ${err}`);
+    logger.error({
+      info: "Error handling message",
+      err,
+      messagePayload,
+      contactPayload,
+      contextPayload,
+      mediaPayload
+    });
   }
 };
 
