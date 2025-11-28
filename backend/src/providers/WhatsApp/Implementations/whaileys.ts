@@ -1,3 +1,5 @@
+import { readFileSync } from "fs";
+
 import makeWASocket, {
   UserFacingSocketConfig,
   DisconnectReason,
@@ -23,6 +25,7 @@ import Whatsapp from "../../../models/Whatsapp";
 import { getIO } from "../../../libs/socket";
 import { logger } from "../../../utils/logger";
 import { setInRedis, getFromRedis } from "../../../libs/redisStore";
+import AppError from "../../../errors/AppError";
 import {
   SendMessageOptions,
   ProviderMessage,
@@ -130,7 +133,7 @@ const useSessionAuthState = async (whatsapp: Whatsapp) => {
             Object.entries(data).forEach(([category, categoryData]) => {
               Object.entries(categoryData as any).forEach(([id, value]) => {
                 const key = `wpp:${sessionId}:${deviceId}:${category}:${id}`;
-                const valueJson = JSON.stringify(value, BufferJSON.replacer);
+                const valueJson = JSON.stringify(value, BufferJSON.replacer); // TODDO implement clean session and keysToStore option
                 promises.push(setInRedis(key, valueJson));
               });
             });
@@ -451,6 +454,16 @@ const getMessageData = async (
   };
 };
 
+const getWbot = (sessionId: number): Session => {
+  const wbot = sessions.get(sessionId);
+
+  if (!wbot) {
+    throw new AppError("ERR_WAPP_NOT_INITIALIZED");
+  }
+
+  return wbot;
+};
+
 const removeSession = async (whatsappId: number): Promise<void> => {
   sessions.delete(whatsappId);
 };
@@ -534,7 +547,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       } else {
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
         if (shouldReconnect) {
-          await whatsapp.update({ status: "DISCONNECTED" });
+          await whatsapp.update({ status: "OPENING" });
           io.emit("whatsappSession", {
             action: "update",
             session: whatsapp
@@ -587,7 +600,6 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     const validMessages = m.messages.filter(
       msg => msg.message && shouldHandleMessage(msg)
     );
-    console.log("🚀 ~ validMessages:", m.messages);
 
     await Promise.all(
       validMessages.map(async msg => {
@@ -655,21 +667,132 @@ const logout = async (sessionId: number): Promise<void> => {
 };
 
 const sendMessage = async (
-  _sessionId: number,
-  _to: string,
-  _body: string,
-  _options?: SendMessageOptions
+  sessionId: number,
+  to: string,
+  body: string,
+  options?: SendMessageOptions
 ): Promise<ProviderMessage> => {
-  throw new Error("Not implemented");
+  const wbot = getWbot(sessionId);
+
+  try {
+    const messageContent: any = options?.quotedMessageId
+      ? {
+          text: body,
+          contextInfo: {
+            stanzaId: options.quotedMessageId,
+            participant: options.quotedMessageFromMe ? wbot.user?.id : to
+          }
+        }
+      : { text: body };
+
+    const sentMsg = await wbot.sendMessage(to, messageContent);
+
+    if (!sentMsg?.key.id) {
+      throw new AppError("ERR_SENDING_WAPP_MSG");
+    }
+
+    return {
+      id: sentMsg.key.id,
+      body,
+      fromMe: true,
+      hasMedia: false,
+      type: "chat",
+      timestamp: sentMsg.messageTimestamp
+        ? Number(sentMsg.messageTimestamp)
+        : Date.now(),
+      from: wbot.user?.id || "",
+      to,
+      ack: 1
+    };
+  } catch (err) {
+    logger.error({ info: "Error sending message", err, sessionId, to });
+    throw new AppError("ERR_SENDING_WAPP_MSG");
+  }
 };
 
 const sendMedia = async (
-  _sessionId: number,
-  _to: string,
-  _media: ProviderMediaInput,
-  _options?: SendMediaOptions
+  sessionId: number,
+  to: string,
+  media: ProviderMediaInput,
+  options?: SendMediaOptions
 ): Promise<ProviderMessage> => {
-  throw new Error("Not implemented");
+  const wbot = getWbot(sessionId);
+
+  try {
+    const mediaBuffer = media.path ? readFileSync(media.path) : media.data;
+
+    if (!mediaBuffer) {
+      throw new AppError("ERR_NO_MEDIA_DATA");
+    }
+
+    const contextInfo = options?.quotedMessageId
+      ? {
+          stanzaId: options.quotedMessageId,
+          participant: to
+        }
+      : undefined;
+
+    let messageContent: any;
+    let messageType: MessageType;
+
+    if (media.mimetype.startsWith("image/")) {
+      messageContent = {
+        image: mediaBuffer,
+        caption: options?.caption,
+        mimetype: media.mimetype,
+        contextInfo
+      };
+      messageType = "image";
+    } else if (media.mimetype.startsWith("video/")) {
+      messageContent = {
+        video: mediaBuffer,
+        caption: options?.caption,
+        mimetype: media.mimetype,
+        contextInfo
+      };
+      messageType = "video";
+    } else if (media.mimetype.startsWith("audio/")) {
+      messageContent = {
+        audio: mediaBuffer,
+        mimetype: media.mimetype,
+        ptt: options?.sendAudioAsVoice || false,
+        contextInfo
+      };
+      messageType = options?.sendAudioAsVoice ? "ptt" : "audio";
+    } else {
+      messageContent = {
+        document: mediaBuffer,
+        caption: options?.caption,
+        mimetype: media.mimetype,
+        fileName: media.filename,
+        contextInfo
+      };
+      messageType = "document";
+    }
+
+    const sentMsg = await wbot.sendMessage(to, messageContent);
+
+    if (!sentMsg) {
+      throw new AppError("ERR_SENDING_WAPP_MSG");
+    }
+
+    return {
+      id: sentMsg.key.id || "",
+      body: options?.caption || media.filename,
+      fromMe: true,
+      hasMedia: true,
+      type: messageType,
+      timestamp: sentMsg.messageTimestamp
+        ? Number(sentMsg.messageTimestamp)
+        : Date.now(),
+      from: wbot.user?.id || "",
+      to,
+      ack: 1
+    };
+  } catch (err) {
+    logger.error({ info: "Error sending media", err, sessionId, to });
+    throw new AppError("ERR_SENDING_WAPP_MSG");
+  }
 };
 
 const deleteMessage = async (
