@@ -334,15 +334,10 @@ const convertToContactPayload = async (
   const [number] = normalizedJid.split("@");
 
   const name = number;
-  let profilePicUrl: string | undefined;
 
-  try {
-    profilePicUrl = await wbot
-      .profilePictureUrl(normalizedJid, "image")
-      .catch(() => undefined);
-  } catch (err) {
-    logger.debug({ info: "Error getting profile picture", jid, err });
-  }
+  const profilePicUrl = await wbot
+    .profilePictureUrl(normalizedJid, "image")
+    .catch(() => undefined);
 
   return {
     id: number,
@@ -717,70 +712,71 @@ const sendMedia = async (
 
   try {
     const mediaBuffer = media.path ? readFileSync(media.path) : media.data;
-
-    if (!mediaBuffer) {
-      throw new AppError("ERR_NO_MEDIA_DATA");
-    }
+    if (!mediaBuffer) throw new AppError("ERR_NO_MEDIA_DATA");
 
     const contextInfo = options?.quotedMessageId
-      ? {
-          stanzaId: options.quotedMessageId,
-          participant: to
-        }
+      ? { stanzaId: options.quotedMessageId, participant: to }
       : undefined;
 
-    let messageContent: any;
-    let messageType: MessageType;
-
-    if (media.mimetype.startsWith("image/")) {
-      messageContent = {
-        image: mediaBuffer,
+    const buildPayload = () => {
+      const base = {
         caption: options?.caption,
         mimetype: media.mimetype,
         contextInfo
       };
-      messageType = "image";
-    } else if (media.mimetype.startsWith("video/")) {
-      messageContent = {
-        video: mediaBuffer,
-        caption: options?.caption,
-        mimetype: media.mimetype,
-        contextInfo
-      };
-      messageType = "video";
-    } else if (media.mimetype.startsWith("audio/")) {
-      messageContent = {
-        audio: mediaBuffer,
-        mimetype: media.mimetype,
-        ptt: options?.sendAudioAsVoice || false,
-        contextInfo
-      };
-      messageType = options?.sendAudioAsVoice ? "ptt" : "audio";
-    } else {
-      messageContent = {
-        document: mediaBuffer,
-        caption: options?.caption,
-        mimetype: media.mimetype,
-        fileName: media.filename,
-        contextInfo
-      };
-      messageType = "document";
-    }
 
-    const sentMsg = await wbot.sendMessage(to, messageContent);
+      if (media.mimetype.startsWith("image/")) {
+        return {
+          message: { image: mediaBuffer, ...base },
+          type: "image" as MessageType
+        };
+      }
 
-    if (!sentMsg) {
-      throw new AppError("ERR_SENDING_WAPP_MSG");
-    }
+      if (media.mimetype.startsWith("video/")) {
+        return {
+          message: { video: mediaBuffer, ...base },
+          type: "video" as MessageType
+        };
+      }
+
+      if (media.mimetype.startsWith("audio/")) {
+        const ptt = Boolean(options?.sendAudioAsVoice);
+        return {
+          message: {
+            audio: mediaBuffer,
+            mimetype: media.mimetype,
+            ptt,
+            contextInfo
+          },
+          type: ptt ? "ptt" : ("audio" as MessageType)
+        };
+      }
+
+      return {
+        message: {
+          document: mediaBuffer,
+          caption: options?.caption,
+          mimetype: media.mimetype,
+          fileName: media.filename,
+          contextInfo
+        },
+        type: "document" as MessageType
+      };
+    };
+
+    const { message, type } = buildPayload();
+
+    const sent = await wbot.sendMessage(to, message);
+    if (!sent?.key?.id) throw new AppError("ERR_SENDING_WAPP_MSG");
 
     return {
-      id: sentMsg.key.id || "",
+      id: sent.key.id,
       body: options?.caption || media.filename,
       fromMe: true,
       hasMedia: true,
-      type: messageType,
-      timestamp: sentMsg.messageTimestamp
-        ? Number(sentMsg.messageTimestamp)
+      type,
+      timestamp: sent.messageTimestamp
+        ? Number(sent.messageTimestamp)
         : Date.now(),
       from: wbot.user?.id || "",
       to,
