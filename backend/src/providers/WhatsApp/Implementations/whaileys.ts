@@ -648,11 +648,9 @@ const logout = async (sessionId: number): Promise<void> => {
   const wbot = sessions.get(sessionId);
 
   if (wbot) {
-    try {
-      await wbot.logout();
-    } catch (err) {
-      logger.error({ info: "Error on logout", sessionId, err });
-    }
+    await wbot
+      .logout()
+      .catch(err => logger.error({ info: "Error on logout", sessionId, err }));
   }
 
   await removeSession(sessionId);
@@ -666,40 +664,35 @@ const sendMessage = async (
 ): Promise<ProviderMessage> => {
   const wbot = getWbot(sessionId);
 
-  try {
-    const messageContent: any = options?.quotedMessageId
-      ? {
-          text: body,
-          contextInfo: {
-            stanzaId: options.quotedMessageId,
-            participant: options.quotedMessageFromMe ? wbot.user?.id : to
-          }
+  const messageContent: any = options?.quotedMessageId
+    ? {
+        text: body,
+        contextInfo: {
+          stanzaId: options.quotedMessageId,
+          participant: options.quotedMessageFromMe ? wbot.user?.id : to
         }
-      : { text: body };
+      }
+    : { text: body };
 
-    const sentMsg = await wbot.sendMessage(to, messageContent);
+  const sentMsg = await wbot.sendMessage(to, messageContent);
 
-    if (!sentMsg?.key.id) {
-      throw new AppError("ERR_SENDING_WAPP_MSG");
-    }
-
-    return {
-      id: sentMsg.key.id,
-      body,
-      fromMe: true,
-      hasMedia: false,
-      type: "chat",
-      timestamp: sentMsg.messageTimestamp
-        ? Number(sentMsg.messageTimestamp)
-        : Date.now(),
-      from: wbot.user?.id || "",
-      to,
-      ack: 1
-    };
-  } catch (err) {
-    logger.error({ info: "Error sending message", err, sessionId, to });
+  if (!sentMsg?.key.id) {
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }
+
+  return {
+    id: sentMsg.key.id,
+    body,
+    fromMe: true,
+    hasMedia: false,
+    type: "chat",
+    timestamp: sentMsg.messageTimestamp
+      ? Number(sentMsg.messageTimestamp)
+      : Date.now(),
+    from: wbot.user?.id || "",
+    to,
+    ack: 1
+  };
 };
 
 const sendMedia = async (
@@ -710,82 +703,77 @@ const sendMedia = async (
 ): Promise<ProviderMessage> => {
   const wbot = getWbot(sessionId);
 
-  try {
-    const mediaBuffer = media.path ? readFileSync(media.path) : media.data;
-    if (!mediaBuffer) throw new AppError("ERR_NO_MEDIA_DATA");
+  const mediaBuffer = media.path ? readFileSync(media.path) : media.data;
+  if (!mediaBuffer) throw new AppError("ERR_NO_MEDIA_DATA");
 
-    const contextInfo = options?.quotedMessageId
-      ? { stanzaId: options.quotedMessageId, participant: to }
-      : undefined;
+  const contextInfo = options?.quotedMessageId
+    ? { stanzaId: options.quotedMessageId, participant: to }
+    : undefined;
 
-    const buildPayload = () => {
-      const base = {
-        caption: options?.caption,
-        mimetype: media.mimetype,
-        contextInfo
+  const buildPayload = () => {
+    const base = {
+      caption: options?.caption,
+      mimetype: media.mimetype,
+      contextInfo
+    };
+
+    if (media.mimetype.startsWith("image/")) {
+      return {
+        message: { image: mediaBuffer, ...base },
+        type: "image" as MessageType
       };
+    }
 
-      if (media.mimetype.startsWith("image/")) {
-        return {
-          message: { image: mediaBuffer, ...base },
-          type: "image" as MessageType
-        };
-      }
+    if (media.mimetype.startsWith("video/")) {
+      return {
+        message: { video: mediaBuffer, ...base },
+        type: "video" as MessageType
+      };
+    }
 
-      if (media.mimetype.startsWith("video/")) {
-        return {
-          message: { video: mediaBuffer, ...base },
-          type: "video" as MessageType
-        };
-      }
-
-      if (media.mimetype.startsWith("audio/")) {
-        const ptt = Boolean(options?.sendAudioAsVoice);
-        return {
-          message: {
-            audio: mediaBuffer,
-            mimetype: media.mimetype,
-            ptt,
-            contextInfo
-          },
-          type: ptt ? "ptt" : ("audio" as MessageType)
-        };
-      }
-
+    if (media.mimetype.startsWith("audio/")) {
+      const ptt = Boolean(options?.sendAudioAsVoice);
       return {
         message: {
-          document: mediaBuffer,
-          caption: options?.caption,
+          audio: mediaBuffer,
           mimetype: media.mimetype,
-          fileName: media.filename,
+          ptt,
           contextInfo
         },
-        type: "document" as MessageType
+        type: ptt ? "ptt" : ("audio" as MessageType)
       };
-    };
-
-    const { message, type } = buildPayload();
-
-    const sent = await wbot.sendMessage(to, message);
-    if (!sent?.key?.id) throw new AppError("ERR_SENDING_WAPP_MSG");
+    }
 
     return {
-      id: sent.key.id,
-      body: options?.caption || media.filename,
-      fromMe: true,
-      hasMedia: true,
-      type,
-      timestamp: sent.messageTimestamp
-        ? Number(sent.messageTimestamp)
-        : Date.now(),
-      from: wbot.user?.id || "",
-      to,
-      ack: 1
+      message: {
+        document: mediaBuffer,
+        caption: options?.caption,
+        mimetype: media.mimetype,
+        fileName: media.filename,
+        contextInfo
+      },
+      type: "document" as MessageType
     };
-  } catch (err) {
-    logger.error({ info: "Error sending media", err, sessionId, to });
-    throw new AppError("ERR_SENDING_WAPP_MSG");
-  }
+  };
+
+  const { message, type } = buildPayload();
+
+  const sent = await wbot.sendMessage(to, message);
+  if (!sent?.key?.id) throw new AppError("ERR_SENDING_WAPP_MEDIA_MSG");
+
+  return {
+    id: sent.key.id,
+    body: options?.caption || media.filename,
+    fromMe: true,
+    hasMedia: true,
+    type,
+    timestamp: sent.messageTimestamp
+      ? Number(sent.messageTimestamp)
+      : Date.now(),
+    from: wbot.user?.id || "",
+    to,
+    ack: 1
+  };
 };
 
 const deleteMessage = async (
