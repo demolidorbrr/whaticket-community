@@ -309,18 +309,20 @@ const shouldHandleMessage = (msg: WAMessage): boolean => {
 const convertToMessagePayload = (msg: WAMessage): MessagePayload => {
   const fromJid = msg.key.remoteJid || "";
   const toJid = msg.key.fromMe ? fromJid : msg.key.participant || fromJid;
+  const fromMe = msg.key.fromMe || false;
 
   return {
     id: msg.key.id || "",
     body: getMessageBody(msg),
-    fromMe: msg.key.fromMe || false,
+    fromMe,
     hasMedia: hasMedia(msg),
     type: mapMessageType(msg),
     timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) : Date.now(),
     from: fromJid,
     to: toJid,
     hasQuotedMsg: Boolean(getQuotedMessageId(msg)),
-    quotedMsgId: getQuotedMessageId(msg)
+    quotedMsgId: getQuotedMessageId(msg),
+    ack: fromMe ? 1 : 0
   };
 };
 

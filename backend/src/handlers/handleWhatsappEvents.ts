@@ -45,6 +45,7 @@ export interface MessagePayload {
   quotedMsgId?: string;
   mediaUrl?: string;
   mediaType?: string;
+  ack?: MessageAck;
 }
 
 export interface MediaPayload {
@@ -263,7 +264,8 @@ export const handleMessage = async (
       fromMe: processedMessage.fromMe,
       read: processedMessage.fromMe,
       mediaType: processedMessage.type,
-      quotedMsgId: processedMessage.quotedMsgId
+      quotedMsgId: processedMessage.quotedMsgId,
+      ack: processedMessage.ack !== undefined ? processedMessage.ack : 0
     };
 
     if (mediaPayload && processedMessage.hasMedia) {
