@@ -427,11 +427,9 @@ const getMessageData = async (
   if (msg.key.fromMe) {
     contactJid = remoteJid;
   } else if (isGroup) {
-    contactJid = remoteJid;
     const participantJid = msg.key.participant || msg.participant || "";
-    if (participantJid) {
-      groupContact = await convertToContactPayload(wbot, participantJid);
-    }
+    contactJid = participantJid;
+    groupContact = await convertToContactPayload(wbot, remoteJid);
   } else {
     contactJid = remoteJid;
   }
