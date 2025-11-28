@@ -475,8 +475,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
   const { state, saveCreds } = await useSessionAuthState(whatsapp);
 
   const connOptions: UserFacingSocketConfig = {
-    printQRInTerminal: false,
     browser: ["Windows", "Chrome", "Chrome 114.0.5735.198"],
+    emitOwnEvents: true,
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(
@@ -497,8 +497,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       return !isJidUser(jid) && !isLidUser(jid) && !isJidGroup(jid);
     },
     syncFullHistory: false,
-    version: [2, 3000, 1029659368],
-    emitOwnEvents: false
+    version: [2, 3000, 1029659368]
   };
 
   const proxyAddress = process.env.PROXY_ADDRESS || "";
@@ -595,8 +594,6 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
   });
 
   wbot.ev.on("messages.upsert", async m => {
-    if (m.type !== "notify") return;
-
     const validMessages = m.messages.filter(
       msg => msg.message && shouldHandleMessage(msg)
     );

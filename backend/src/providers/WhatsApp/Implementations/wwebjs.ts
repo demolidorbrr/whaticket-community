@@ -227,7 +227,6 @@ const getMessageData = async (
     msgContact = await wbot.getContactById(msg.to);
   } else {
     msgContact = await msg.getContact();
-    console.log("🚀 ~ msgContact:", msgContact);
   }
 
   const chat = await msg.getChat();
@@ -444,13 +443,11 @@ const deleteMessage = async (
 
 const init = async (whatsapp: Whatsapp): Promise<void> => {
   try {
-    console.log("STARTING");
     removeSession(whatsapp.id);
 
     const io = getIO();
     const sessionName = whatsapp.name;
     const sessionCfg = whatsapp?.session ? JSON.parse(whatsapp.session) : {};
-    console.log("🚀 ~ sessionCfg:", sessionCfg);
 
     const args: string = process.env.CHROME_ARGS || "";
 
@@ -458,6 +455,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       session: sessionCfg,
       authStrategy: new LocalAuth({ clientId: `bd_${whatsapp.id}` }),
       puppeteer: {
+        // headless: false, // TODO make sure chromium closes on session disconnection / delete
         executablePath: process.env.CHROME_BIN || undefined,
         browserWSEndpoint: process.env.CHROME_WS || undefined,
         args: [
