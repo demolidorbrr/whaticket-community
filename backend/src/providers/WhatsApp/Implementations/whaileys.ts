@@ -24,8 +24,9 @@ import NodeCache from "node-cache";
 import Whatsapp from "../../../models/Whatsapp";
 import { getIO } from "../../../libs/socket";
 import { logger } from "../../../utils/logger";
-import { setInRedis, getFromRedis } from "../../../libs/redisStore";
 import AppError from "../../../errors/AppError";
+import StoreWppSessionKeys from "../../../services/WppKeyServices/StoreWppSessionKeys";
+import GetWppSessionKeys from "../../../services/WppKeyServices/GetWppSessionKeys";
 import {
   SendMessageOptions,
   ProviderMessage,
@@ -99,28 +100,14 @@ const useSessionAuthState = async (whatsapp: Whatsapp) => {
       creds: creds as AuthenticationCreds,
       keys: {
         get: async (type: string, ids: string[]) => {
-          const data: any = {};
           const deviceId = jidDecode(creds?.me?.id)?.device || 1;
 
-          try {
-            await Promise.all(
-              ids.map(async id => {
-                const key = `wpp:${sessionId}:${deviceId}:${type}:${id}`;
-                const stored = await getFromRedis(key);
-
-                if (stored) {
-                  data[id] = JSON.parse(stored, BufferJSON.reviver);
-                }
-              })
-            );
-          } catch (err) {
-            logger.error({
-              info: "Error getting keys from Redis",
-              sessionId,
-              type,
-              err
-            });
-          }
+          const data = await GetWppSessionKeys({
+            connectionId: sessionId,
+            deviceId,
+            type,
+            ids
+          });
 
           return data;
         },
@@ -132,16 +119,22 @@ const useSessionAuthState = async (whatsapp: Whatsapp) => {
 
             Object.entries(data).forEach(([category, categoryData]) => {
               Object.entries(categoryData as any).forEach(([id, value]) => {
-                const key = `wpp:${sessionId}:${deviceId}:${category}:${id}`;
-                const valueJson = JSON.stringify(value, BufferJSON.replacer); // TODDO implement clean session and keysToStore option
-                promises.push(setInRedis(key, valueJson));
+                promises.push(
+                  StoreWppSessionKeys({
+                    connectionId: sessionId,
+                    deviceId,
+                    type: category,
+                    id,
+                    value
+                  })
+                );
               });
             });
 
             await Promise.all(promises);
           } catch (err) {
             logger.error({
-              info: "Error setting keys to Redis",
+              info: "Error setting keys",
               sessionId,
               err
             });
