@@ -24,10 +24,13 @@ class Contact extends Model<Contact> {
   @Column
   name: string;
 
-  @AllowNull(false)
   @Unique
   @Column
   number: string;
+
+  @Unique
+  @Column
+  lid: string;
 
   @AllowNull(false)
   @Default("")

@@ -28,6 +28,7 @@ export interface ContactPayload {
   id: string;
   name: string;
   number: string;
+  lid?: string;
   profilePicUrl?: string;
   isGroup: boolean;
 }
@@ -226,6 +227,7 @@ export const handleMessage = async (
     const contact = await CreateOrUpdateContactService({
       name: contactPayload.name,
       number: contactPayload.number,
+      lid: contactPayload.lid,
       profilePicUrl: contactPayload.profilePicUrl,
       isGroup: contactPayload.isGroup
     });
@@ -235,6 +237,7 @@ export const handleMessage = async (
       groupContact = await CreateOrUpdateContactService({
         name: contextPayload.groupContact.name,
         number: contextPayload.groupContact.number,
+        lid: contextPayload.groupContact.lid,
         profilePicUrl: contextPayload.groupContact.profilePicUrl,
         isGroup: contextPayload.groupContact.isGroup
       });
