@@ -25,7 +25,6 @@ import { MessageType, MessageAck } from "../providers/WhatsApp/types";
 const writeFileAsync = promisify(writeFile);
 
 export interface ContactPayload {
-  id: string;
   name: string;
   number: string;
   lid?: string;
