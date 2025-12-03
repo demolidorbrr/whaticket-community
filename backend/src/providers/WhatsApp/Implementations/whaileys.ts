@@ -149,6 +149,10 @@ const useSessionAuthState = async (whatsapp: Whatsapp) => {
 const mapMessageType = (msg: WAMessage): MessageType => {
   const messageType = getContentType(msg.message || undefined);
 
+  if (messageType === "audioMessage" && msg.message?.audioMessage?.ptt) {
+    return "ptt";
+  }
+
   const typeMap: Record<string, MessageType> = {
     conversation: "chat",
     extendedTextMessage: "chat",
@@ -162,16 +166,7 @@ const mapMessageType = (msg: WAMessage): MessageType => {
     contactsArrayMessage: "vcard"
   };
 
-  const mappedType = typeMap[messageType || ""];
-
-  if (messageType === "audioMessage") {
-    const audioMsg = msg.message?.audioMessage;
-    if (audioMsg?.ptt) {
-      return "ptt";
-    }
-  }
-
-  return mappedType || "chat";
+  return typeMap[messageType || ""] || "chat";
 };
 
 const getMessageBody = (msg: WAMessage): string => {
@@ -209,13 +204,14 @@ const getMessageBody = (msg: WAMessage): string => {
 
     if (messageType === "locationMessage") {
       const location = msg.message?.locationMessage;
-      if (location) {
-        const gmapsUrl = `https://maps.google.com/maps?q=${location.degreesLatitude}%2C${location.degreesLongitude}&z=17&hl=pt-BR`;
-        const description =
-          location.name ||
-          `${location.degreesLatitude}, ${location.degreesLongitude}`;
-        return `${gmapsUrl}|${description}`;
-      }
+      if (!location) return "";
+
+      const gmapsUrl = `https://maps.google.com/maps?q=${location.degreesLatitude}%2C${location.degreesLongitude}&z=17&hl=pt-BR`;
+      const description =
+        location.name ||
+        `${location.degreesLatitude}, ${location.degreesLongitude}`;
+
+      return `${gmapsUrl}|${description}`;
     }
 
     return "";
@@ -226,29 +222,14 @@ const getMessageBody = (msg: WAMessage): string => {
 };
 
 const getQuotedMessageId = (msg: WAMessage): string | undefined => {
-  const messageType = getContentType(msg.message || undefined);
+  const quotedMessageId =
+    msg.message?.extendedTextMessage?.contextInfo?.stanzaId ||
+    msg.message?.imageMessage?.contextInfo?.stanzaId ||
+    msg.message?.videoMessage?.contextInfo?.stanzaId ||
+    msg.message?.documentMessage?.contextInfo?.stanzaId ||
+    undefined;
 
-  if (messageType === "extendedTextMessage") {
-    const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
-    return contextInfo?.stanzaId || undefined;
-  }
-
-  if (messageType === "imageMessage") {
-    const contextInfo = msg.message?.imageMessage?.contextInfo;
-    return contextInfo?.stanzaId || undefined;
-  }
-
-  if (messageType === "videoMessage") {
-    const contextInfo = msg.message?.videoMessage?.contextInfo;
-    return contextInfo?.stanzaId || undefined;
-  }
-
-  if (messageType === "documentMessage") {
-    const contextInfo = msg.message?.documentMessage?.contextInfo;
-    return contextInfo?.stanzaId || undefined;
-  }
-
-  return undefined;
+  return quotedMessageId;
 };
 
 const hasMedia = (msg: WAMessage): boolean => {
@@ -277,26 +258,21 @@ const shouldHandleMessage = (msg: WAMessage): boolean => {
     "contactsArrayMessage"
   ];
 
-  if (!validTypes.includes(messageType || "")) {
-    return false;
-  }
+  if (!validTypes.includes(messageType || "")) return false;
 
   const body = getMessageBody(msg);
   if (/\u200e/.test(body[0])) return false;
 
-  if (msg.key.fromMe) {
-    if (
-      !hasMedia(msg) &&
-      messageType !== "locationMessage" &&
-      messageType !== "conversation" &&
-      messageType !== "extendedTextMessage" &&
-      messageType !== "contactMessage"
-    ) {
-      return false;
-    }
-  }
+  if (!msg.key.fromMe) return true;
 
-  return true;
+  const allowedFromMeTypes = [
+    "locationMessage",
+    "conversation",
+    "extendedTextMessage",
+    "contactMessage"
+  ];
+
+  return hasMedia(msg) || allowedFromMeTypes.includes(messageType || "");
 };
 
 const convertToMessagePayload = (msg: WAMessage): MessagePayload => {
@@ -347,6 +323,7 @@ const convertToMediaPayload = async (
 ): Promise<MediaPayload | undefined> => {
   if (!hasMedia(msg)) return undefined;
 
+  // TODO save direct to disc using stream
   try {
     const buffer = await downloadMediaMessage(
       msg,
@@ -356,37 +333,60 @@ const convertToMediaPayload = async (
     );
 
     const messageType = getContentType(msg.message || undefined);
-    let filename = "";
-    let mimetype = "";
+    const getExtension = (mimetype: string, fallback: string): string =>
+      mimetype.split("/")[1]?.split(";")[0] || fallback;
 
     if (messageType === "imageMessage") {
-      const imageMsg = msg.message?.imageMessage;
-      mimetype = imageMsg?.mimetype || "image/jpeg";
-      const ext = mimetype.split("/")[1]?.split(";")[0] || "jpg";
-      filename = `image-${Date.now()}.${ext}`;
-    } else if (messageType === "videoMessage") {
-      const videoMsg = msg.message?.videoMessage;
-      mimetype = videoMsg?.mimetype || "video/mp4";
-      const ext = mimetype.split("/")[1]?.split(";")[0] || "mp4";
-      filename = `video-${Date.now()}.${ext}`;
-    } else if (messageType === "audioMessage") {
-      const audioMsg = msg.message?.audioMessage;
-      mimetype = audioMsg?.mimetype || "audio/ogg; codecs=opus";
-      filename = `audio-${Date.now()}.ogg`;
-    } else if (messageType === "documentMessage") {
+      const mimetype = msg.message?.imageMessage?.mimetype || "image/jpeg";
+      return {
+        filename: `image-${Date.now()}.${getExtension(mimetype, "jpg")}`,
+        mimetype,
+        data: buffer.toString("base64")
+      };
+    }
+
+    if (messageType === "videoMessage") {
+      const mimetype = msg.message?.videoMessage?.mimetype || "video/mp4";
+      return {
+        filename: `video-${Date.now()}.${getExtension(mimetype, "mp4")}`,
+        mimetype,
+        data: buffer.toString("base64")
+      };
+    }
+
+    if (messageType === "audioMessage") {
+      const mimetype =
+        msg.message?.audioMessage?.mimetype || "audio/ogg; codecs=opus";
+      return {
+        filename: `audio-${Date.now()}.ogg`,
+        mimetype,
+        data: buffer.toString("base64")
+      };
+    }
+
+    if (messageType === "documentMessage") {
       const docMsg = msg.message?.documentMessage;
-      mimetype = docMsg?.mimetype || "application/octet-stream";
-      const ext = mimetype.split("/")[1]?.split(";")[0] || "bin";
-      filename = docMsg?.title || `document-${Date.now()}.${ext}`;
-    } else if (messageType === "stickerMessage") {
-      const stickerMsg = msg.message?.stickerMessage;
-      mimetype = stickerMsg?.mimetype || "image/webp";
-      filename = `sticker-${Date.now()}.webp`;
+      const mimetype = docMsg?.mimetype || "application/octet-stream";
+      const ext = getExtension(mimetype, "bin");
+      return {
+        filename: docMsg?.title || `document-${Date.now()}.${ext}`,
+        mimetype,
+        data: buffer.toString("base64")
+      };
+    }
+
+    if (messageType === "stickerMessage") {
+      const mimetype = msg.message?.stickerMessage?.mimetype || "image/webp";
+      return {
+        filename: `sticker-${Date.now()}.webp`,
+        mimetype,
+        data: buffer.toString("base64")
+      };
     }
 
     return {
-      filename,
-      mimetype,
+      filename: "",
+      mimetype: "",
       data: buffer.toString("base64")
     };
   } catch (err) {
@@ -395,6 +395,7 @@ const convertToMediaPayload = async (
       err,
       messageId: msg.key.id
     });
+
     return undefined;
   }
 };
@@ -412,10 +413,10 @@ const getMessageData = async (
   const isGroup = isJidGroup(remoteJid);
 
   let contactJid = remoteJid;
-  let groupContact: ContactPayload | undefined;
+  let groupContact;
 
-  if (!msg.key.fromMe && isGroup) {
-    contactJid = msg.key.participant || msg.participant || "";
+  if (!msg.key.fromMe && isGroup && msg.key.participant) {
+    contactJid = msg.key.participant;
     groupContact = await convertToContactPayload(wbot, remoteJid);
   }
 
@@ -526,23 +527,26 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         });
 
         await removeSession(sessionId);
-      } else {
-        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-        if (shouldReconnect) {
-          await whatsapp.update({ status: "OPENING" });
-          io.emit("whatsappSession", {
-            action: "update",
-            session: whatsapp
-          });
-          logger.info({
-            info: "Connection closed, reconnecting...",
-            sessionId,
-            statusCode
-          });
 
-          await sleep(3000);
-          init(whatsapp);
-        }
+        return;
+      }
+
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut; // TODO handle other cases
+
+      if (shouldReconnect) {
+        await whatsapp.update({ status: "OPENING" });
+        io.emit("whatsappSession", {
+          action: "update",
+          session: whatsapp
+        });
+        logger.info({
+          info: "Connection closed, reconnecting...",
+          sessionId,
+          statusCode
+        });
+
+        await sleep(3000);
+        init(whatsapp);
       }
     }
 
