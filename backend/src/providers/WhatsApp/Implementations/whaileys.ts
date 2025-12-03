@@ -328,15 +328,15 @@ const convertToContactPayload = async (
 
   const name = number;
 
-  const profilePicUrl = await wbot
-    .profilePictureUrl(normalizedJid, "image")
-    .catch(() => undefined);
+  // const profilePicUrl = await wbot
+  //   .profilePictureUrl(normalizedJid, "image") // TODO HANDLE TO ONLY GET ONCE A DAY
+  //   .catch(() => undefined);
 
   return {
     id: number,
     name,
     number,
-    profilePicUrl,
+    profilePicUrl: undefined,
     isGroup: Boolean(isJidGroup(jid))
   };
 };
@@ -411,17 +411,12 @@ const getMessageData = async (
   const remoteJid = msg.key.remoteJid || "";
   const isGroup = isJidGroup(remoteJid);
 
-  let contactJid: string;
+  let contactJid = remoteJid;
   let groupContact: ContactPayload | undefined;
 
-  if (msg.key.fromMe) {
-    contactJid = remoteJid;
-  } else if (isGroup) {
-    const participantJid = msg.key.participant || msg.participant || "";
-    contactJid = participantJid;
+  if (!msg.key.fromMe && isGroup) {
+    contactJid = msg.key.participant || msg.participant || "";
     groupContact = await convertToContactPayload(wbot, remoteJid);
-  } else {
-    contactJid = remoteJid;
   }
 
   const contactPayload = await convertToContactPayload(wbot, contactJid);
@@ -611,25 +606,17 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
   wbot.ev.on("messages.update", async updates => {
     await Promise.all(
-      updates.map(async update => {
+      updates.map(async event => {
         try {
-          if (update.update.status) {
-            const ackMap: Record<number, MessageAck> = {
-              0: 0,
-              1: 1,
-              2: 2,
-              3: 3,
-              4: 4
-            };
+          if (!event.update.status || !event.key.id) return;
 
-            const ack = ackMap[update.update.status] || 0;
-            await handleMessageAck(update.key.id || "", ack);
-          }
+          const ack = (event.update.status as MessageAck) || 0;
+          await handleMessageAck(event.key.id, ack);
         } catch (err) {
           logger.error({
             info: "Error handling message update",
             err,
-            messageId: update.key.id
+            messageId: event.key.id
           });
         }
       })
