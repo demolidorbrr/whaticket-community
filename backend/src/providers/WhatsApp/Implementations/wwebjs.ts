@@ -104,7 +104,6 @@ const convertToContactPayload = async (
   const profilePicUrl = await msgContact.getProfilePicUrl();
 
   return {
-    id: msgContact.id.user,
     name: msgContact.name || msgContact.pushname || msgContact.id.user,
     number: msgContact.id.user,
     profilePicUrl,
