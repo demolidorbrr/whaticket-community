@@ -940,12 +940,12 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
           if (!key.id) return;
 
           let ack: MessageAck = 2;
-          if (receipt.receiptTimestamp) {
-            ack = 3;
+          if (receipt.playedTimestamp) {
+            ack = 4;
           } else if (receipt.readTimestamp) {
             ack = 3;
-          } else if (receipt.playedTimestamp) {
-            ack = 4;
+          } else if (receipt.receiptTimestamp) {
+            ack = 2;
           }
 
           await handleMessageAck(key.id, ack);
@@ -996,7 +996,7 @@ const sendMessage = async (
         text: body,
         contextInfo: {
           stanzaId: options.quotedMessageId,
-          participant: options.quotedMessageFromMe ? wbot.user?.id : to
+          participant: options.quotedMessageFromMe ? wbot.user?.id : toJid
         }
       }
     : { text: body };
@@ -1242,7 +1242,10 @@ const fetchChatMessages = async (
 ): Promise<ProviderMessage[]> => {
   const wbot = getWbot(sessionId);
 
-  const messagesFromStore = wbot.store?.messages?.[chatId]?.array || [];
+  const normalizedChatId = normalizeJid(chatId);
+
+  const messagesFromStore =
+    wbot.store?.messages?.[normalizedChatId]?.array || [];
 
   const messages = messagesFromStore.slice(-limit);
 
@@ -1254,7 +1257,7 @@ const fetchChatMessages = async (
     type: mapMessageType(msg),
     timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) : Date.now(),
     from: msg.key.participant || msg.key.remoteJid || "",
-    to: chatId,
+    to: normalizedChatId,
     ack: mapMessageAck(msg.status)
   }));
 };
