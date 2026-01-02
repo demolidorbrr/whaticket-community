@@ -463,13 +463,115 @@ const convertToMessagePayload = (msg: WAMessage): MessagePayload => {
   };
 };
 
+type ExtendedKey = WAMessageKey &
+  Partial<{
+    senderPn: string;
+    sender_pn: string;
+    participantPn: string;
+    participant_pn: string;
+    peerRecipientPn: string;
+    peer_recipient_pn: string;
+    senderLid: string;
+    sender_lid: string;
+    participantLid: string;
+    participant_lid: string;
+    recipientLid: string;
+    recipient_lid: string;
+  }>;
+
+type ExtendedContext = proto.IContextInfo &
+  Partial<{
+    senderLid: string;
+    sender_lid: string;
+    participantLid: string;
+    participant_lid: string;
+    recipientLid: string;
+    recipient_lid: string;
+    senderPn: string;
+    sender_pn: string;
+    participantPn: string;
+    participant_pn: string;
+    peerRecipientPn: string;
+    peer_recipient_pn: string;
+  }>;
+
 const convertToContactPayload = async (
   jid: string,
   msg: WAMessage
 ): Promise<ContactPayload> => {
-  const normalizedJid = jidNormalizedUser(jid);
+  const keyExt = (msg.key || {}) as ExtendedKey;
+  const content = msg.message || {};
+  const ctx = (content?.extendedTextMessage?.contextInfo ||
+    content?.imageMessage?.contextInfo ||
+    content?.videoMessage?.contextInfo ||
+    content?.documentMessage?.contextInfo ||
+    content?.audioMessage?.contextInfo ||
+    content?.stickerMessage?.contextInfo ||
+    undefined) as ExtendedContext | undefined;
 
-  if (isJidGroup(jid)) {
+  let resolvedJid = jid || "";
+
+  const lidCandidates: (string | undefined)[] = [
+    keyExt.senderLid,
+    keyExt.participantLid,
+    keyExt.recipientLid,
+    ctx?.senderLid,
+    ctx?.participantLid,
+    ctx?.recipientLid,
+    keyExt.sender_lid,
+    keyExt.participant_lid,
+    keyExt.recipient_lid,
+    ctx?.sender_lid,
+    ctx?.participant_lid,
+    ctx?.recipient_lid,
+    (keyExt.senderPn || keyExt.sender_pn)?.includes("@lid")
+      ? keyExt.senderPn || keyExt.sender_pn
+      : undefined,
+    (keyExt.participantPn || keyExt.participant_pn)?.includes("@lid")
+      ? keyExt.participantPn || keyExt.participant_pn
+      : undefined,
+    (keyExt.peerRecipientPn || keyExt.peer_recipient_pn)?.includes("@lid")
+      ? keyExt.peerRecipientPn || keyExt.peer_recipient_pn
+      : undefined
+  ];
+
+  const lid = lidCandidates.find(
+    cand => typeof cand === "string" && cand.includes("@lid")
+  );
+
+  const pnCandidates: (string | undefined)[] = [
+    keyExt.senderPn || keyExt.sender_pn,
+    keyExt.participantPn || keyExt.participant_pn,
+    keyExt.peerRecipientPn || keyExt.peer_recipient_pn
+  ];
+
+  const preferPn = pnCandidates.find(
+    v => typeof v === "string" && /@s\.whatsapp\.net$/i.test(v)
+  );
+
+  if (resolvedJid.endsWith("@lid") && preferPn) {
+    resolvedJid = preferPn;
+  } else if (
+    resolvedJid &&
+    !resolvedJid.endsWith("@s.whatsapp.net") &&
+    !resolvedJid.endsWith("@g.us") &&
+    preferPn
+  ) {
+    resolvedJid = preferPn;
+  }
+
+  const safeNormalized = (value?: string) => {
+    if (!value) return "";
+    try {
+      return jidNormalizedUser(value);
+    } catch {
+      return value;
+    }
+  };
+
+  const normalizedJid = safeNormalized(resolvedJid);
+
+  if (isJidGroup(resolvedJid)) {
     const groupNumber = normalizedJid.split("@")[0];
 
     return {
@@ -479,21 +581,22 @@ const convertToContactPayload = async (
     };
   }
 
+  const decoded = jidDecode(resolvedJid);
+
   const number =
-    (isJidUser(jid) && jidDecode(jid)?.user) ||
-    jidDecode(msg.key.senderPn)?.user ||
+    (isJidUser(resolvedJid) && decoded?.user) ||
+    jidDecode(preferPn || "")?.user ||
     normalizedJid.split("@")[0];
 
-  const lid =
-    (isLidUser(jid) && jidDecode(jid)?.user) ||
-    jidDecode(msg.key.senderLid || msg.key.recipientLid)?.user;
+  const lidValue =
+    isLidUser(resolvedJid) && decoded?.user ? `${decoded.user}@lid` : lid;
 
-  const name = msg.pushName || number || lid || "";
+  const name = msg.pushName || number || lidValue || "";
 
   return {
     name,
     number,
-    lid,
+    lid: lidValue,
     isGroup: false
   };
 };
