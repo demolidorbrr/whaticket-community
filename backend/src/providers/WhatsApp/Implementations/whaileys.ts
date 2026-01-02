@@ -497,7 +497,8 @@ type ExtendedContext = proto.IContextInfo &
 
 const convertToContactPayload = async (
   jid: string,
-  msg: WAMessage
+  msg: WAMessage,
+  wbot: Session
 ): Promise<ContactPayload> => {
   const keyExt = (msg.key || {}) as ExtendedKey;
   const content = msg.message || {};
@@ -571,11 +572,41 @@ const convertToContactPayload = async (
 
   const normalizedJid = safeNormalized(resolvedJid);
 
+  const contactInfo =
+    wbot.store?.contacts?.[resolvedJid] ||
+    wbot.store?.contacts?.[normalizedJid];
+
+  const chatInfo =
+    wbot.store?.chats?.get?.(resolvedJid) ||
+    wbot.store?.chats?.get?.(normalizedJid);
+
   if (isJidGroup(resolvedJid)) {
     const groupNumber = normalizedJid.split("@")[0];
+    const groupName =
+      contactInfo?.name ||
+      contactInfo?.notify ||
+      chatInfo?.name ||
+      (chatInfo as { subject?: string } | undefined)?.subject ||
+      groupNumber;
+
+    if (!contactInfo && (!groupName || groupName === groupNumber)) {
+      try {
+        const meta = await wbot.groupMetadata(normalizedJid);
+        const metaName = typeof meta?.subject === "string" ? meta.subject : "";
+        if (metaName) {
+          return {
+            name: metaName,
+            number: groupNumber,
+            isGroup: true
+          };
+        }
+      } catch {
+        /* ignore */
+      }
+    }
 
     return {
-      name: groupNumber,
+      name: groupName,
       number: groupNumber,
       isGroup: true
     };
@@ -591,7 +622,13 @@ const convertToContactPayload = async (
   const lidValue =
     isLidUser(resolvedJid) && decoded?.user ? `${decoded.user}@lid` : lid;
 
-  const name = msg.pushName || number || lidValue || "";
+  const name =
+    contactInfo?.name ||
+    contactInfo?.notify ||
+    msg.pushName ||
+    number ||
+    lidValue ||
+    "";
 
   return {
     name,
@@ -704,10 +741,10 @@ const getMessageData = async (
 
   if (!msg.key.fromMe && isGroup && msg.key.participant) {
     contactJid = msg.key.participant;
-    groupContact = await convertToContactPayload(remoteJid, msg);
+    groupContact = await convertToContactPayload(remoteJid, msg, wbot);
   }
 
-  const contactPayload = await convertToContactPayload(contactJid, msg);
+  const contactPayload = await convertToContactPayload(contactJid, msg, wbot);
   const messagePayload = convertToMessagePayload(msg);
   const mediaPayload = await convertToMediaPayload(msg, wbot);
 
