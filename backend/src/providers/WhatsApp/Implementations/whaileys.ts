@@ -580,6 +580,21 @@ const convertToContactPayload = async (
     wbot.store?.chats?.get?.(resolvedJid) ||
     wbot.store?.chats?.get?.(normalizedJid);
 
+  let profilePicUrl: string | undefined;
+
+  if (normalizedJid) {
+    try {
+      const url = await wbot.profilePictureUrl(normalizedJid, "image");
+      profilePicUrl = url || undefined;
+    } catch (err) {
+      logger.debug({
+        info: "Could not get profile picture",
+        jid: normalizedJid,
+        err
+      });
+    }
+  }
+
   if (isJidGroup(resolvedJid)) {
     const groupNumber = normalizedJid.split("@")[0];
     const groupName =
@@ -597,7 +612,8 @@ const convertToContactPayload = async (
           return {
             name: metaName,
             number: groupNumber,
-            isGroup: true
+            isGroup: true,
+            profilePicUrl
           };
         }
       } catch {
@@ -608,7 +624,8 @@ const convertToContactPayload = async (
     return {
       name: groupName,
       number: groupNumber,
-      isGroup: true
+      isGroup: true,
+      profilePicUrl
     };
   }
 
@@ -634,7 +651,8 @@ const convertToContactPayload = async (
     name,
     number,
     lid: lidValue,
-    isGroup: false
+    isGroup: false,
+    profilePicUrl
   };
 };
 
