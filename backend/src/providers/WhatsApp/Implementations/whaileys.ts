@@ -15,7 +15,10 @@ import makeWASocket, {
   downloadMediaMessage,
   getContentType,
   jidNormalizedUser,
-  jidDecode
+  jidDecode,
+  makeInMemoryStore,
+  SignalDataSet,
+  AnyMessageContent
 } from "whaileys";
 import { Boom } from "@hapi/boom";
 import { HttpsProxyAgent } from "https-proxy-agent";
@@ -47,11 +50,17 @@ import {
   WhatsappContextPayload
 } from "../../../handlers/handleWhatsappEvents";
 
+type WALogger = NonNullable<Parameters<typeof makeInMemoryStore>[0]["logger"]>;
+
+type Store = ReturnType<typeof makeInMemoryStore>;
+
 interface Session extends WASocket {
   id: number;
+  store?: Store;
 }
 
 const sessions = new Map<number, Session>();
+const stores = new Map<number, Store>();
 
 const assertUnique = (sessionId: number) => {
   const wbot = sessions.get(sessionId);
@@ -59,6 +68,7 @@ const assertUnique = (sessionId: number) => {
   if (wbot) {
     wbot.ev.removeAllListeners("connection.update");
     sessions.delete(sessionId);
+    stores.delete(sessionId);
 
     wbot.end(undefined);
   }
@@ -111,14 +121,15 @@ const useSessionAuthState = async (whatsapp: Whatsapp) => {
 
           return data;
         },
-        set: async (data: any) => {
+        set: async (data: SignalDataSet) => {
           const deviceId = jidDecode(creds?.me?.id)?.device || 1;
 
           try {
             const promises: Promise<void>[] = [];
 
             Object.entries(data).forEach(([category, categoryData]) => {
-              Object.entries(categoryData as any).forEach(([id, value]) => {
+              if (!categoryData) return;
+              Object.entries(categoryData).forEach(([id, value]) => {
                 promises.push(
                   StoreWppSessionKeys({
                     connectionId: sessionId,
@@ -243,6 +254,15 @@ const hasMedia = (msg: WAMessage): boolean => {
   ].includes(messageType || "");
 };
 
+const mapMessageAck = (status: number | null | undefined): MessageAck => {
+  if (status === null || status === undefined) return 0;
+  if (status >= 4) return 4;
+  if (status >= 3) return 3;
+  if (status >= 2) return 2;
+  if (status >= 1) return 1;
+  return 0;
+};
+
 const shouldHandleMessage = (msg: WAMessage): boolean => {
   const messageType = getContentType(msg.message || undefined);
   const validTypes = [
@@ -342,7 +362,10 @@ const convertToMediaPayload = async (
       msg,
       "buffer",
       {},
-      { logger: logger as any, reuploadRequest: wbot.updateMediaMessage }
+      {
+        logger: logger as unknown as WALogger,
+        reuploadRequest: wbot.updateMediaMessage
+      }
     );
 
     const messageType = getContentType(msg.message || undefined);
@@ -463,6 +486,7 @@ const getWbot = (sessionId: number): Session => {
 
 const removeSession = async (whatsappId: number): Promise<void> => {
   sessions.delete(whatsappId);
+  stores.delete(whatsappId);
 };
 
 const init = async (whatsapp: Whatsapp): Promise<void> => {
@@ -478,7 +502,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(
         state.keys,
-        logger as any,
+        logger as unknown as WALogger,
         new NodeCache({
           useClones: false,
           stdTTL: 60 * 60,
@@ -510,8 +534,14 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
   assertUnique(sessionId);
 
+  const store = makeInMemoryStore({ logger: logger as unknown as WALogger });
+  stores.set(sessionId, store);
+
   const wbot = makeWASocket(connOptions) as Session;
   wbot.id = sessionId;
+  wbot.store = store;
+
+  store.bind(wbot.ev);
 
   sessions.set(sessionId, wbot);
 
@@ -661,7 +691,7 @@ const sendMessage = async (
 ): Promise<ProviderMessage> => {
   const wbot = getWbot(sessionId);
 
-  const messageContent: any = options?.quotedMessageId
+  const messageContent: AnyMessageContent = options?.quotedMessageId
     ? {
         text: body,
         contextInfo: {
@@ -774,42 +804,126 @@ const sendMedia = async (
 };
 
 const deleteMessage = async (
-  _sessionId: number,
-  _chatId: string,
-  _messageId: string,
-  _fromMe: boolean
+  sessionId: number,
+  chatId: string,
+  messageId: string,
+  fromMe: boolean
 ): Promise<void> => {
-  throw new Error("Not implemented");
+  const wbot = getWbot(sessionId);
+
+  const key = {
+    remoteJid: chatId,
+    id: messageId,
+    fromMe
+  };
+
+  await wbot.sendMessage(chatId, { delete: key });
 };
 
 const checkNumber = async (
-  _sessionId: number,
-  _number: string
+  sessionId: number,
+  number: string
 ): Promise<string> => {
-  throw new Error("Not implemented");
+  const wbot = getWbot(sessionId);
+
+  const cleanNumber = number.replace(/\D/g, "");
+
+  const [result] = await wbot.onWhatsApp(cleanNumber);
+
+  if (!result?.exists) {
+    throw new AppError("ERR_NUMBER_NOT_ON_WHATSAPP", 404);
+  }
+
+  return result.jid;
 };
 
 const getProfilePicUrl = async (
-  _sessionId: number,
-  _number: string
+  sessionId: number,
+  number: string
 ): Promise<string> => {
-  throw new Error("Not implemented");
+  const wbot = getWbot(sessionId);
+
+  const jid = number.includes("@") ? number : `${number}@s.whatsapp.net`;
+
+  try {
+    const url = await wbot.profilePictureUrl(jid, "image");
+    return url || "";
+  } catch (err) {
+    logger.debug({
+      info: "Could not get profile picture",
+      number,
+      err
+    });
+    return "";
+  }
 };
 
-const getContacts = async (_sessionId: number): Promise<ProviderContact[]> => {
-  throw new Error("Not implemented");
+const getContacts = async (sessionId: number): Promise<ProviderContact[]> => {
+  const wbot = getWbot(sessionId);
+
+  const contacts: ProviderContact[] = [];
+
+  if (wbot.store?.contacts) {
+    Object.values(wbot.store.contacts).forEach(contact => {
+      if (contact.id && isJidUser(contact.id)) {
+        contacts.push({
+          id: contact.id,
+          number: jidNormalizedUser(contact.id).replace("@s.whatsapp.net", ""),
+          name: contact.name || contact.notify || "",
+          pushname: contact.notify || "",
+          isGroup: false
+        });
+      }
+    });
+  }
+
+  return contacts;
 };
 
-const sendSeen = async (_sessionId: number, _chatId: string): Promise<void> => {
-  throw new Error("Not implemented");
+const sendSeen = async (sessionId: number, chatId: string): Promise<void> => {
+  const wbot = getWbot(sessionId);
+
+  const lastMessages = wbot.store?.messages?.[chatId]?.array?.slice(-5) || [];
+
+  if (lastMessages.length === 0) {
+    return;
+  }
+
+  const keys = lastMessages
+    .filter(msg => !msg.key.fromMe && msg.key.id)
+    .map(msg => ({
+      remoteJid: chatId,
+      id: msg.key.id!,
+      participant: msg.key.participant
+    }));
+
+  if (keys.length > 0) {
+    await wbot.readMessages(keys);
+  }
 };
 
 const fetchChatMessages = async (
-  _sessionId: number,
-  _chatId: string,
-  _limit = 100
+  sessionId: number,
+  chatId: string,
+  limit = 100
 ): Promise<ProviderMessage[]> => {
-  throw new Error("Not implemented");
+  const wbot = getWbot(sessionId);
+
+  const messagesFromStore = wbot.store?.messages?.[chatId]?.array || [];
+
+  const messages = messagesFromStore.slice(-limit);
+
+  return messages.map(msg => ({
+    id: msg.key.id || "",
+    body: getMessageBody(msg),
+    fromMe: msg.key.fromMe || false,
+    hasMedia: hasMedia(msg),
+    type: mapMessageType(msg),
+    timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) : Date.now(),
+    from: msg.key.participant || msg.key.remoteJid || "",
+    to: chatId,
+    ack: mapMessageAck(msg.status)
+  }));
 };
 
 export const WhaileysProvider: WhatsappProvider = {
