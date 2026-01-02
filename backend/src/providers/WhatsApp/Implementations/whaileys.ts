@@ -1,5 +1,6 @@
 import { readFileSync } from "fs";
 
+import pino from "pino";
 import makeWASocket, {
   UserFacingSocketConfig,
   DisconnectReason,
@@ -51,6 +52,10 @@ import {
 } from "../../../handlers/handleWhatsappEvents";
 
 type WALogger = NonNullable<Parameters<typeof makeInMemoryStore>[0]["logger"]>;
+
+const whaileyLogger = pino({
+  level: process.env.WHAILEYS_LOG_LEVEL || "silent"
+}) as unknown as WALogger;
 
 type Store = ReturnType<typeof makeInMemoryStore>;
 
@@ -363,7 +368,7 @@ const convertToMediaPayload = async (
       "buffer",
       {},
       {
-        logger: logger as unknown as WALogger,
+        logger: whaileyLogger,
         reuploadRequest: wbot.updateMediaMessage
       }
     );
@@ -496,13 +501,14 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
   const { state, saveCreds } = await useSessionAuthState(whatsapp);
 
   const connOptions: UserFacingSocketConfig = {
+    logger: whaileyLogger,
     browser: ["Windows", "Chrome", "Chrome 114.0.5735.198"],
     emitOwnEvents: true,
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(
         state.keys,
-        logger as unknown as WALogger,
+        whaileyLogger,
         new NodeCache({
           useClones: false,
           stdTTL: 60 * 60,
@@ -534,7 +540,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
   assertUnique(sessionId);
 
-  const store = makeInMemoryStore({ logger: logger as unknown as WALogger });
+  const store = makeInMemoryStore({ logger: whaileyLogger });
   stores.set(sessionId, store);
 
   const wbot = makeWASocket(connOptions) as Session;
