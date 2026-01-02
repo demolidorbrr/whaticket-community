@@ -103,6 +103,28 @@ const saveSessionCreds = async (
   }
 };
 
+const credsDebounceTimers = new Map<number, NodeJS.Timeout>();
+
+const debouncedSaveCreds = (
+  whatsapp: Whatsapp,
+  creds: AuthenticationCreds,
+  delayMs = 1000
+) => {
+  const sessionId = whatsapp.id;
+
+  const existingTimer = credsDebounceTimers.get(sessionId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+
+  const timer = setTimeout(() => {
+    credsDebounceTimers.delete(sessionId);
+    saveSessionCreds(whatsapp, creds);
+  }, delayMs);
+
+  credsDebounceTimers.set(sessionId, timer);
+};
+
 const useSessionAuthState = async (whatsapp: Whatsapp) => {
   const sessionId = whatsapp.id;
 
@@ -157,8 +179,7 @@ const useSessionAuthState = async (whatsapp: Whatsapp) => {
           }
         }
       }
-    },
-    saveCreds: () => saveSessionCreds(whatsapp, creds)
+    }
   };
 };
 
@@ -498,7 +519,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
   const sessionId = whatsapp.id;
   const io = getIO();
 
-  const { state, saveCreds } = await useSessionAuthState(whatsapp);
+  const { state } = await useSessionAuthState(whatsapp);
 
   const connOptions: UserFacingSocketConfig = {
     logger: whaileyLogger,
@@ -552,9 +573,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
   sessions.set(sessionId, wbot);
 
   wbot.ev.on("creds.update", () => {
-    console.log("creds!!!!!!"); // todo verificar se realmente deveria triggar isso sempre que recebe uma msg, colocar um debounce
-
-    saveCreds();
+    debouncedSaveCreds(whatsapp, state.creds);
   });
 
   wbot.ev.on("connection.update", async update => {
