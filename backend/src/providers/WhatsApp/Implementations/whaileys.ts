@@ -104,6 +104,24 @@ const saveSessionCreds = async (
 };
 
 const credsDebounceTimers = new Map<number, NodeJS.Timeout>();
+const pendingCredsSaves = new Map<
+  number,
+  { whatsapp: Whatsapp; creds: AuthenticationCreds }
+>();
+
+const flushPendingCredsSave = async (sessionId: number): Promise<void> => {
+  const existingTimer = credsDebounceTimers.get(sessionId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    credsDebounceTimers.delete(sessionId);
+  }
+
+  const pending = pendingCredsSaves.get(sessionId);
+  if (pending) {
+    pendingCredsSaves.delete(sessionId);
+    await saveSessionCreds(pending.whatsapp, pending.creds);
+  }
+};
 
 const debouncedSaveCreds = (
   whatsapp: Whatsapp,
@@ -117,8 +135,11 @@ const debouncedSaveCreds = (
     clearTimeout(existingTimer);
   }
 
+  pendingCredsSaves.set(sessionId, { whatsapp, creds });
+
   const timer = setTimeout(() => {
     credsDebounceTimers.delete(sessionId);
+    pendingCredsSaves.delete(sessionId);
     saveSessionCreds(whatsapp, creds);
   }, delayMs);
 
@@ -511,6 +532,7 @@ const getWbot = (sessionId: number): Session => {
 };
 
 const removeSession = async (whatsappId: number): Promise<void> => {
+  await flushPendingCredsSave(whatsappId);
   sessions.delete(whatsappId);
   stores.delete(whatsappId);
 };
@@ -602,6 +624,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut; // TODO handle other cases
 
       if (shouldReconnect) {
+        await flushPendingCredsSave(sessionId);
+
         await whatsapp.update({ status: "OPENING" });
         io.emit("whatsappSession", {
           action: "update",
@@ -619,6 +643,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     }
 
     if (connection === "open") {
+      await flushPendingCredsSave(sessionId);
+
       await whatsapp.update({
         status: "CONNECTED",
         qrcode: "",
@@ -697,6 +723,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 };
 
 const logout = async (sessionId: number): Promise<void> => {
+  await flushPendingCredsSave(sessionId);
+
   const wbot = sessions.get(sessionId);
 
   if (wbot) {
