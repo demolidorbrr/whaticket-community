@@ -39,6 +39,7 @@ import { logger } from "../../../utils/logger";
 import AppError from "../../../errors/AppError";
 import StoreWppSessionKeys from "../../../services/WppKeyServices/StoreWppSessionKeys";
 import GetWppSessionKeys from "../../../services/WppKeyServices/GetWppSessionKeys";
+import { getRedisClient } from "../../../libs/redisStore";
 import {
   SendMessageOptions,
   ProviderMessage,
@@ -165,6 +166,39 @@ const msgCache = {
     } catch (e) {
       logger.debug({ info: "Error caching message", messageId: id, err: e });
     }
+  }
+};
+
+const clearSessionKeys = async (sessionId: number): Promise<void> => {
+  const client = getRedisClient();
+  if (!client) return;
+
+  try {
+    const match = `wpp:${sessionId}:*`;
+
+    const scanAndDelete = async (cursor: string): Promise<void> => {
+      const [nextCursor, keys] = await client.scan(
+        cursor,
+        "MATCH",
+        match,
+        "COUNT",
+        100
+      );
+
+      if (keys.length > 0) {
+        await client.del(keys);
+      }
+
+      if (nextCursor !== "0") {
+        await scanAndDelete(nextCursor);
+      }
+    };
+
+    await scanAndDelete("0");
+
+    logger.info({ info: "Cleared Redis session keys", sessionId });
+  } catch (err) {
+    logger.error({ info: "Error clearing Redis session keys", sessionId, err });
   }
 };
 
@@ -1010,6 +1044,33 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
     if (connection === "close") {
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+      const errorMessage =
+        (lastDisconnect?.error as Boom)?.output?.payload?.message ||
+        (lastDisconnect?.error as Error)?.message ||
+        "";
+
+      if (errorMessage === "Intentional Logout") {
+        await whatsapp.update({
+          status: "DISCONNECTED",
+          qrcode: "",
+          retries: 0
+        });
+
+        const updatedWhatsapp = await Whatsapp.findByPk(sessionId);
+        if (updatedWhatsapp) {
+          io.emit("whatsappSession", {
+            action: "update",
+            session: updatedWhatsapp
+          });
+        }
+
+        logger.info({ info: "Session intentionally logged out", sessionId });
+
+        await clearSessionKeys(sessionId);
+
+        await removeSession(sessionId);
+        return;
+      }
 
       if (statusCode === DisconnectReason.loggedOut) {
         await whatsapp.update({
@@ -1018,10 +1079,13 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
           retries: 0
         });
 
-        io.emit("whatsappSession", {
-          action: "update",
-          session: whatsapp
-        });
+        const updatedWhatsapp = await Whatsapp.findByPk(sessionId);
+        if (updatedWhatsapp) {
+          io.emit("whatsappSession", {
+            action: "update",
+            session: updatedWhatsapp
+          });
+        }
 
         await removeSession(sessionId);
 
@@ -1058,10 +1122,13 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         retries: 0
       });
 
-      io.emit("whatsappSession", {
-        action: "update",
-        session: whatsapp
-      });
+      const updatedWhatsapp = await Whatsapp.findByPk(sessionId);
+      if (updatedWhatsapp) {
+        io.emit("whatsappSession", {
+          action: "update",
+          session: updatedWhatsapp
+        });
+      }
 
       logger.info({ info: "Session connected", sessionId });
     }
@@ -1147,6 +1214,29 @@ const logout = async (sessionId: number): Promise<void> => {
   }
 
   await removeSession(sessionId);
+
+  const whatsapp = await Whatsapp.findByPk(sessionId);
+
+  if (whatsapp) {
+    await whatsapp.update({
+      status: "DISCONNECTED",
+      qrcode: "",
+      session: "",
+      retries: 0
+    });
+
+    const updatedWhatsapp = await Whatsapp.findByPk(sessionId);
+    if (updatedWhatsapp) {
+      getIO().emit("whatsappSession", {
+        action: "update",
+        session: updatedWhatsapp
+      });
+    }
+
+    logger.info({ info: "Session logged out", sessionId });
+  }
+
+  await clearSessionKeys(sessionId);
 };
 
 const sendMessage = async (
