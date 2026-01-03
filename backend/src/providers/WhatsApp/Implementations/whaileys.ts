@@ -631,6 +631,15 @@ const convertToContactPayload = async (
 
   const decoded = jidDecode(resolvedJid);
 
+  const sessionPushName = wbot.user?.name?.trim().toLowerCase();
+  const incomingPushName = msg.pushName?.trim();
+  const pushName =
+    incomingPushName &&
+    sessionPushName &&
+    incomingPushName.toLowerCase() === sessionPushName
+      ? undefined
+      : incomingPushName;
+
   const number =
     (isJidUser(resolvedJid) && decoded?.user) ||
     jidDecode(preferPn || "")?.user ||
@@ -642,7 +651,7 @@ const convertToContactPayload = async (
   const name =
     contactInfo?.name ||
     contactInfo?.notify ||
-    msg.pushName ||
+    pushName ||
     number ||
     lidValue ||
     "";
