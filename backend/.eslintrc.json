@@ -41,6 +41,16 @@
       }
     ]
   },
+  "overrides": [
+    {
+      "files": [
+        "src/**/*.ts"
+      ],
+      "rules": {
+        "camelcase": "off"
+      }
+    }
+  ],
   "settings": {
     "import/resolver": {
       "typescript": {}
