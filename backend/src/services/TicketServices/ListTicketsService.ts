@@ -50,7 +50,15 @@ const ListTicketsService = async ({
         : userQueueIds;
 
   let whereCondition: Filterable["where"] =
-    showAll === "true" ? {} : { [Op.or]: [{ userId }, { status: "pending" }] };
+    showAll === "true"
+      ? {}
+      : {
+          [Op.or]: [
+            { userId },
+            { status: "pending" },
+            { [Op.and]: [{ status: "open" }, { userId: null }] }
+          ]
+        };
 
   if (normalizedQueueIds.length > 0) {
     whereCondition = {

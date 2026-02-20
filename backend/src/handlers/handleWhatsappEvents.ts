@@ -47,6 +47,48 @@ const consumePendingAck = (messageId: string): MessageAck | undefined => {
   return ack;
 };
 
+const messagePreviewByType: Record<string, string> = {
+  image: "[Imagem]",
+  video: "[Video]",
+  audio: "[Audio]",
+  ptt: "[Audio]",
+  document: "[Documento]",
+  sticker: "[Sticker]",
+  vcard: "[Contato]",
+  location: "[Localizacao]"
+};
+
+const normalizePreviewText = (value?: string): string => {
+  if (!value) return "";
+  return value.replace(/\s+/g, " ").trim();
+};
+
+const buildLastMessagePreview = (
+  message: MessagePayload,
+  media?: MediaPayload
+): string => {
+  const normalizedBody = normalizePreviewText(message.body);
+  if (normalizedBody) {
+    return normalizedBody;
+  }
+
+  const previewByType = messagePreviewByType[message.type];
+  if (previewByType) {
+    return previewByType;
+  }
+
+  const mediaFilename = normalizePreviewText(media?.filename);
+  if (mediaFilename) {
+    return mediaFilename;
+  }
+
+  if (message.hasMedia) {
+    return "[Midia]";
+  }
+
+  return "";
+};
+
 export interface ContactPayload {
   name: string;
   number: string;
@@ -367,14 +409,7 @@ export const handleMessage = async (
       messageData.mediaType = mediaType;
     }
 
-    let lastMessageText = "";
-    if (processedMessage.type === "location") {
-      lastMessageText = processedMessage.body.includes("Localization")
-        ? processedMessage.body
-        : "Localization";
-    } else {
-      lastMessageText = processedMessage.body || mediaPayload?.filename || "";
-    }
+    const lastMessageText = buildLastMessagePreview(processedMessage, mediaPayload);
 
     await ticket.update({ lastMessage: lastMessageText });
 

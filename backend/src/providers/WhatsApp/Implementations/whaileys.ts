@@ -463,7 +463,7 @@ const shouldHandleMessage = (msg: WAMessage): boolean => {
   if (!validTypes.includes(messageType || "")) return false;
 
   const body = getMessageBody(msg);
-  if (/\u200e/.test(body[0])) return false;
+  if (msg.key.fromMe && body && /\u200e/.test(body[0])) return false;
 
   if (!msg.key.fromMe) return true;
 

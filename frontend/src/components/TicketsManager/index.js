@@ -337,6 +337,7 @@ const TicketsManager = () => {
           />
           <TicketsList
             status="pending"
+            showAll={showAllTickets}
             selectedQueueIds={selectedQueueIds}
             groupMode="exclude"
             updateCount={(val) => setPendingCount(val)}

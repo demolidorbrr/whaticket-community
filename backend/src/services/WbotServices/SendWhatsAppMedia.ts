@@ -49,7 +49,13 @@ const SendWhatsAppMedia = async ({
       mediaOptions
     );
 
-    await ticket.update({ lastMessage: body || media.filename });
+    const messagePreview =
+      (hasBody && hasBody.trim()) ||
+      media.originalname ||
+      media.filename ||
+      "[Midia]";
+
+    await ticket.update({ lastMessage: messagePreview });
 
     fs.unlinkSync(media.path);
 

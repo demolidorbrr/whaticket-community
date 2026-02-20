@@ -248,8 +248,8 @@ const shouldHandleMessage = (msg: WbotMessage): boolean => {
     return false;
   }
 
-  // Check for Unicode direction mark
-  if (/\u200e/.test(msg.body[0])) return false;
+  // Ignore internal system-marked outgoing messages only.
+  if (msg.fromMe && msg.body && /\u200e/.test(msg.body[0])) return false;
 
   // Additional validation for messages from me
   if (msg.fromMe) {
