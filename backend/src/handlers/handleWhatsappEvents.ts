@@ -1,9 +1,11 @@
-import { join } from "path";
+﻿import { join } from "path";
 import { promisify } from "util";
 import { writeFile } from "fs";
 import * as Sentry from "@sentry/node";
 
 import { getIO } from "../libs/socket";
+import { getCompanyTicketRoom } from "../libs/socketRooms";
+import { runWithTenantContext } from "../libs/tenantContext";
 import { logger } from "../utils/logger";
 import { debounce } from "../helpers/Debounce";
 import formatBody from "../helpers/Mustache";
@@ -11,6 +13,7 @@ import formatBody from "../helpers/Mustache";
 import Contact from "../models/Contact";
 import Ticket from "../models/Ticket";
 import Message from "../models/Message";
+import Whatsapp from "../models/Whatsapp";
 
 import CreateMessageService from "../services/MessageServices/CreateMessageService";
 import CreateOrUpdateContactService from "../services/ContactServices/CreateOrUpdateContactService";
@@ -317,7 +320,25 @@ export const handleMessage = async (
   contextPayload: WhatsappContextPayload,
   mediaPayload?: MediaPayload
 ): Promise<void> => {
-  try {
+  const whatsapp = await Whatsapp.findByPk(contextPayload.whatsappId, {
+    attributes: ["companyId"]
+  });
+
+  if (!whatsapp?.companyId) {
+    logger.error({
+      info: "Error handling message: whatsapp not found",
+      contextPayload
+    });
+    return;
+  }
+
+  await runWithTenantContext(
+    {
+      companyId: whatsapp.companyId,
+      profile: "system"
+    },
+    async () => {
+      try {
     const processedMessage = processLocationMessage(messagePayload);
     const resolvedQuotedMsgId = await resolveQuotedMessageId(
       processedMessage.quotedMsgId
@@ -471,17 +492,19 @@ export const handleMessage = async (
         contactPayload
       );
     }
-  } catch (err) {
-    Sentry.captureException(err);
-    logger.error({
-      info: "Error handling message",
-      err,
-      messagePayload,
-      contactPayload,
-      contextPayload,
-      mediaPayload
-    });
-  }
+      } catch (err) {
+        Sentry.captureException(err);
+        logger.error({
+          info: "Error handling message",
+          err,
+          messagePayload,
+          contactPayload,
+          contextPayload,
+          mediaPayload
+        });
+      }
+    }
+  );
 };
 
 export const handleMessageAck = async (
@@ -495,6 +518,11 @@ export const handleMessageAck = async (
   try {
     const messageToUpdate = await Message.findByPk(messageId, {
       include: [
+        {
+          model: Ticket,
+          as: "ticket",
+          attributes: ["id", "companyId"]
+        },
         "contact",
         {
           model: Message,
@@ -512,7 +540,12 @@ export const handleMessageAck = async (
     const mergedAck = mergeAck(messageToUpdate.ack, ack);
     await messageToUpdate.update({ ack: mergedAck });
 
-    io.to(messageToUpdate.ticketId.toString()).emit("appMessage", {
+    const ticketCompanyId = messageToUpdate.ticket?.companyId;
+    const ticketRoomName = ticketCompanyId
+      ? getCompanyTicketRoom(ticketCompanyId, messageToUpdate.ticketId)
+      : messageToUpdate.ticketId.toString();
+
+    io.to(ticketRoomName).emit("appMessage", {
       action: "update",
       message: messageToUpdate
     });
@@ -521,3 +554,4 @@ export const handleMessageAck = async (
     logger.error(`Error handling message ack: ${err}`);
   }
 };
+

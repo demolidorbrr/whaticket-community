@@ -1,8 +1,8 @@
-import { Op, UniqueConstraintError } from "sequelize";
-import { getIO } from "../../libs/socket";
+﻿import { Op, UniqueConstraintError } from "sequelize";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
 import { logger } from "../../utils/logger";
+import { emitByCompany } from "../../helpers/SocketEmitByCompany";
 
 interface ExtraInfo {
   name: string;
@@ -21,9 +21,7 @@ interface Request {
 }
 
 const emitContact = (action: "update" | "create", contact: Contact) => {
-  const io = getIO();
-
-  io.emit("contact", { action, contact });
+  emitByCompany(contact.companyId, "contact", { action, contact });
 };
 
 const findContactByNumberOrLid = async (
@@ -157,3 +155,4 @@ const CreateOrUpdateContactService = async ({
 };
 
 export default CreateOrUpdateContactService;
+

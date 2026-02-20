@@ -1,6 +1,5 @@
-import * as Yup from "yup";
+﻿import * as Yup from "yup";
 import { Request, Response } from "express";
-import { getIO } from "../libs/socket";
 
 import ListQuickAnswerService from "../services/QuickAnswerService/ListQuickAnswerService";
 import CreateQuickAnswerService from "../services/QuickAnswerService/CreateQuickAnswerService";
@@ -9,6 +8,7 @@ import UpdateQuickAnswerService from "../services/QuickAnswerService/UpdateQuick
 import DeleteQuickAnswerService from "../services/QuickAnswerService/DeleteQuickAnswerService";
 
 import AppError from "../errors/AppError";
+import { emitByCompany } from "../helpers/SocketEmitByCompany";
 
 type IndexQuery = {
   searchParam: string;
@@ -49,8 +49,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     ...newQuickAnswer
   });
 
-  const io = getIO();
-  io.emit("quickAnswer", {
+  emitByCompany(quickAnswer.companyId, "quickAnswer", {
     action: "create",
     quickAnswer
   });
@@ -90,8 +89,7 @@ export const update = async (
     quickAnswerId
   });
 
-  const io = getIO();
-  io.emit("quickAnswer", {
+  emitByCompany(quickAnswer.companyId, "quickAnswer", {
     action: "update",
     quickAnswer
   });
@@ -107,11 +105,11 @@ export const remove = async (
 
   await DeleteQuickAnswerService(quickAnswerId);
 
-  const io = getIO();
-  io.emit("quickAnswer", {
+  emitByCompany(req.user.companyId, "quickAnswer", {
     action: "delete",
     quickAnswerId
   });
 
   return res.status(200).json({ message: "Quick Answer deleted" });
 };
+

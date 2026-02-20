@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+﻿import { Request, Response } from "express";
 import * as Yup from "yup";
 import AppError from "../errors/AppError";
 import GetDefaultWhatsApp from "../helpers/GetDefaultWhatsApp";
@@ -13,6 +13,7 @@ import CheckContactNumber from "../services/WbotServices/CheckNumber";
 import GetProfilePicUrl from "../services/WbotServices/GetProfilePicUrl";
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
+import { runWithTenantContext } from "../libs/tenantContext";
 
 type WhatsappData = {
   whatsappId: number;
@@ -48,8 +49,6 @@ const createContact = async (
     isGroup: false
   };
 
-  const contact = await CreateOrUpdateContactService(contactData);
-
   let whatsapp: Whatsapp | null;
 
   if (whatsappId === undefined) {
@@ -62,13 +61,33 @@ const createContact = async (
     }
   }
 
-  const createTicket = await FindOrCreateTicketService(contact, whatsapp.id, 1);
+  if (!whatsapp?.companyId) {
+    throw new AppError("ERR_NO_COMPANY_FOUND", 403);
+  }
 
-  const ticket = await ShowTicketService(createTicket.id);
+  const selectedWhatsapp = whatsapp;
 
-  SetTicketMessagesAsRead(ticket);
+  return runWithTenantContext(
+    {
+      companyId: selectedWhatsapp.companyId,
+      profile: "api"
+    },
+    async () => {
+      const contact = await CreateOrUpdateContactService(contactData);
 
-  return ticket;
+      const createTicket = await FindOrCreateTicketService(
+        contact,
+        selectedWhatsapp.id,
+        1
+      );
+
+      const ticket = await ShowTicketService(createTicket.id);
+
+      SetTicketMessagesAsRead(ticket);
+
+      return ticket;
+    }
+  );
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
@@ -105,3 +124,4 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
   return res.send();
 };
+

@@ -1,5 +1,4 @@
-import { Request, Response } from "express";
-import { getIO } from "../libs/socket";
+﻿import { Request, Response } from "express";
 import { StartWhatsAppSession } from "../services/WbotServices/StartWhatsAppSession";
 
 import CreateWhatsAppService from "../services/WhatsappService/CreateWhatsAppService";
@@ -8,6 +7,7 @@ import ListWhatsAppsService from "../services/WhatsappService/ListWhatsAppsServi
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import UpdateWhatsAppService from "../services/WhatsappService/UpdateWhatsAppService";
 import { whatsappProvider } from "../providers/WhatsApp";
+import { emitByCompany } from "../helpers/SocketEmitByCompany";
 
 interface WhatsappData {
   name: string;
@@ -45,14 +45,13 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   StartWhatsAppSession(whatsapp);
 
-  const io = getIO();
-  io.emit("whatsapp", {
+  emitByCompany(whatsapp.companyId, "whatsapp", {
     action: "update",
     whatsapp
   });
 
   if (oldDefaultWhatsapp) {
-    io.emit("whatsapp", {
+    emitByCompany(oldDefaultWhatsapp.companyId, "whatsapp", {
       action: "update",
       whatsapp: oldDefaultWhatsapp
     });
@@ -81,14 +80,13 @@ export const update = async (
     whatsappId
   });
 
-  const io = getIO();
-  io.emit("whatsapp", {
+  emitByCompany(whatsapp.companyId, "whatsapp", {
     action: "update",
     whatsapp
   });
 
   if (oldDefaultWhatsapp) {
-    io.emit("whatsapp", {
+    emitByCompany(oldDefaultWhatsapp.companyId, "whatsapp", {
       action: "update",
       whatsapp: oldDefaultWhatsapp
     });
@@ -106,11 +104,11 @@ export const remove = async (
   await DeleteWhatsAppService(whatsappId);
   whatsappProvider.removeSession(+whatsappId);
 
-  const io = getIO();
-  io.emit("whatsapp", {
+  emitByCompany(req.user.companyId, "whatsapp", {
     action: "delete",
     whatsappId: +whatsappId
   });
 
   return res.status(200).json({ message: "Whatsapp deleted." });
 };
+

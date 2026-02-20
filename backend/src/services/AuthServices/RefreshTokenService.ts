@@ -1,4 +1,4 @@
-import { verify } from "jsonwebtoken";
+﻿import { verify } from "jsonwebtoken";
 import { Response as Res } from "express";
 
 import User from "../../models/User";
@@ -9,6 +9,7 @@ import {
   createAccessToken,
   createRefreshToken
 } from "../../helpers/CreateTokens";
+import EnsureCompanyIsActiveService from "../CompanyServices/EnsureCompanyIsActiveService";
 
 interface RefreshTokenPayload {
   id: string;
@@ -36,6 +37,8 @@ export const RefreshTokenService = async (
       throw new AppError("ERR_SESSION_EXPIRED", 401);
     }
 
+    EnsureCompanyIsActiveService(user.company);
+
     const newToken = createAccessToken(user);
     const refreshToken = createRefreshToken(user);
 
@@ -45,3 +48,4 @@ export const RefreshTokenService = async (
     throw new AppError("ERR_SESSION_EXPIRED", 401);
   }
 };
+

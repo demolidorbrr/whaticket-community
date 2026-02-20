@@ -1,4 +1,4 @@
-import {
+﻿import {
   Table,
   Column,
   CreatedAt,
@@ -11,7 +11,13 @@ import {
   AutoIncrement,
   Default,
   BelongsToMany,
-  DataType
+  DataType,
+  BeforeFind,
+  BeforeCount,
+  BeforeBulkUpdate,
+  BeforeBulkDestroy,
+  BeforeCreate,
+  BeforeBulkCreate
 } from "sequelize-typescript";
 
 import Contact from "./Contact";
@@ -22,9 +28,39 @@ import Whatsapp from "./Whatsapp";
 import Tag from "./Tag";
 import TicketTag from "./TicketTag";
 import TicketEvent from "./TicketEvent";
+import Company from "./Company";
+import {
+  applyTenantScope,
+  applyTenantScopeToBulkInstances,
+  applyTenantScopeToInstance
+} from "../helpers/ApplyTenantScope";
 
 @Table
 class Ticket extends Model<Ticket> {
+  @BeforeFind
+  @BeforeCount
+  static applyTenantFilter(options: Record<string, unknown>): void {
+    applyTenantScope(options);
+  }
+
+  @BeforeBulkUpdate
+  @BeforeBulkDestroy
+  static applyTenantFilterToBulkOperations(
+    options: Record<string, unknown>
+  ): void {
+    applyTenantScope(options);
+  }
+
+  @BeforeCreate
+  static assignCompanyId(instance: Ticket): void {
+    applyTenantScopeToInstance(instance);
+  }
+
+  @BeforeBulkCreate
+  static assignCompanyIdToBulk(instances: Ticket[]): void {
+    applyTenantScopeToBulkInstances(instances);
+  }
+
   @PrimaryKey
   @AutoIncrement
   @Column
@@ -59,6 +95,13 @@ class Ticket extends Model<Ticket> {
 
   @Column(DataType.DATE(6))
   resolvedAt: Date;
+
+  @ForeignKey(() => Company)
+  @Column
+  companyId: number;
+
+  @BelongsTo(() => Company)
+  company: Company;
 
   @CreatedAt
   createdAt: Date;
@@ -105,3 +148,4 @@ class Ticket extends Model<Ticket> {
 }
 
 export default Ticket;
+

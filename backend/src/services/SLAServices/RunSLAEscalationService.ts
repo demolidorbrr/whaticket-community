@@ -1,5 +1,9 @@
-import { Op } from "sequelize";
+﻿import { Op } from "sequelize";
 import { getIO } from "../../libs/socket";
+import {
+  getCompanyNotificationRoom,
+  getCompanyStatusRoom
+} from "../../libs/socketRooms";
 import Ticket from "../../models/Ticket";
 import GetSettingValueService from "../SettingServices/GetSettingValueService";
 import LogTicketEventService from "../TicketServices/LogTicketEventService";
@@ -66,7 +70,14 @@ const RunSLAEscalationService = async (): Promise<void> => {
       }
     });
 
-    io.to("pending").to("notification").emit("ticket", {
+    const statusRoomName = ticket.companyId
+      ? getCompanyStatusRoom(ticket.companyId, "pending")
+      : "pending";
+    const notificationRoomName = ticket.companyId
+      ? getCompanyNotificationRoom(ticket.companyId)
+      : "notification";
+
+    io.to(statusRoomName).to(notificationRoomName).emit("ticket", {
       action: "update",
       ticket
     });
@@ -74,3 +85,4 @@ const RunSLAEscalationService = async (): Promise<void> => {
 };
 
 export default RunSLAEscalationService;
+

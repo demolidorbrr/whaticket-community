@@ -1,4 +1,9 @@
-import { getIO } from "../../libs/socket";
+﻿import { getIO } from "../../libs/socket";
+import {
+  getCompanyNotificationRoom,
+  getCompanyStatusRoom,
+  getCompanyTicketRoom
+} from "../../libs/socketRooms";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
@@ -16,6 +21,7 @@ interface MessageData {
   ack?: number;
   quotedMsgId?: string;
 }
+
 interface Request {
   messageData: MessageData;
 }
@@ -65,9 +71,20 @@ const CreateMessageService = async ({
   };
 
   const io = getIO();
-  io.to(message.ticketId.toString())
-    .to(message.ticket.status)
-    .to("notification")
+  const companyId = message.ticket.companyId;
+  const ticketRoomName = companyId
+    ? getCompanyTicketRoom(companyId, message.ticketId)
+    : message.ticketId.toString();
+  const statusRoomName = companyId
+    ? getCompanyStatusRoom(companyId, message.ticket.status)
+    : message.ticket.status;
+  const notificationRoomName = companyId
+    ? getCompanyNotificationRoom(companyId)
+    : "notification";
+
+  io.to(ticketRoomName)
+    .to(statusRoomName)
+    .to(notificationRoomName)
     .emit("appMessage", {
       action: "create",
       message,
@@ -79,3 +96,4 @@ const CreateMessageService = async ({
 };
 
 export default CreateMessageService;
+

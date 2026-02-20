@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useRef, useState } from "react";
+﻿import React, { useContext, useEffect, useRef, useState } from "react";
 import { makeStyles } from "@material-ui/core/styles";
 import Paper from "@material-ui/core/Paper";
 import SearchIcon from "@material-ui/icons/Search";
@@ -98,7 +98,9 @@ const TicketsManager = () => {
   const [openCount, setOpenCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [groupsCount, setGroupsCount] = useState(0);
-  const isAdmin = user.profile?.toUpperCase() === "ADMIN";
+  const isAdmin = ["ADMIN", "SUPERADMIN"].includes(
+    user.profile?.toUpperCase()
+  );
   const userQueueIds = user.queues.map((q) => q.id);
   const [availableQueues, setAvailableQueues] = useState(user?.queues || []);
   const [selectedQueueIds, setSelectedQueueIds] = useState(
@@ -372,3 +374,4 @@ const TicketsManager = () => {
 };
 
 export default TicketsManager;
+

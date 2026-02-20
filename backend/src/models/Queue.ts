@@ -1,4 +1,4 @@
-import {
+﻿import {
   Table,
   Column,
   CreatedAt,
@@ -7,33 +7,75 @@ import {
   PrimaryKey,
   AutoIncrement,
   AllowNull,
-  Unique,
   BelongsToMany,
   Default,
-  DataType
+  DataType,
+  ForeignKey,
+  BelongsTo,
+  BeforeFind,
+  BeforeCount,
+  BeforeBulkUpdate,
+  BeforeBulkDestroy,
+  BeforeCreate,
+  BeforeBulkCreate
 } from "sequelize-typescript";
 import User from "./User";
 import UserQueue from "./UserQueue";
 
 import Whatsapp from "./Whatsapp";
 import WhatsappQueue from "./WhatsappQueue";
+import Company from "./Company";
+import {
+  applyTenantScope,
+  applyTenantScopeToBulkInstances,
+  applyTenantScopeToInstance
+} from "../helpers/ApplyTenantScope";
 
 @Table
 class Queue extends Model<Queue> {
+  @BeforeFind
+  @BeforeCount
+  static applyTenantFilter(options: Record<string, unknown>): void {
+    applyTenantScope(options);
+  }
+
+  @BeforeBulkUpdate
+  @BeforeBulkDestroy
+  static applyTenantFilterToBulkOperations(
+    options: Record<string, unknown>
+  ): void {
+    applyTenantScope(options);
+  }
+
+  @BeforeCreate
+  static assignCompanyId(instance: Queue): void {
+    applyTenantScopeToInstance(instance);
+  }
+
+  @BeforeBulkCreate
+  static assignCompanyIdToBulk(instances: Queue[]): void {
+    applyTenantScopeToBulkInstances(instances);
+  }
+
   @PrimaryKey
   @AutoIncrement
   @Column
   id: number;
 
   @AllowNull(false)
-  @Unique
   @Column
   name: string;
 
   @AllowNull(false)
-  @Unique
   @Column
   color: string;
+
+  @ForeignKey(() => Company)
+  @Column
+  companyId: number;
+
+  @BelongsTo(() => Company)
+  company: Company;
 
   @Column
   greetingMessage: string;
@@ -70,3 +112,4 @@ class Queue extends Model<Queue> {
 }
 
 export default Queue;
+

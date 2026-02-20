@@ -1,9 +1,12 @@
-import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
+﻿import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
 import SetTicketMessagesAsRead from "../../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../../libs/socket";
+import {
+  getCompanyNotificationRoom,
+  getCompanyStatusRoom,
+  getCompanyTicketRoom
+} from "../../libs/socketRooms";
 import Ticket from "../../models/Ticket";
-import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
-import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import ShowTicketService from "./ShowTicketService";
 import LogTicketEventService from "./LogTicketEventService";
 
@@ -109,20 +112,33 @@ const UpdateTicketService = async ({
   }
 
   const io = getIO();
+  const companyId = updatedTicket.companyId;
+  const oldStatusRoomName = companyId
+    ? getCompanyStatusRoom(companyId, oldStatus)
+    : oldStatus;
+  const updatedStatusRoomName = companyId
+    ? getCompanyStatusRoom(companyId, updatedTicket.status)
+    : updatedTicket.status;
+  const notificationRoomName = companyId
+    ? getCompanyNotificationRoom(companyId)
+    : "notification";
+  const ticketRoomName = companyId
+    ? getCompanyTicketRoom(companyId, ticketId)
+    : ticketId.toString();
 
   if (
     updatedTicket.status !== oldStatus ||
     updatedTicket.user?.id !== oldUserId
   ) {
-    io.to(oldStatus).emit("ticket", {
+    io.to(oldStatusRoomName).emit("ticket", {
       action: "delete",
       ticketId: updatedTicket.id
     });
   }
 
-  io.to(updatedTicket.status)
-    .to("notification")
-    .to(ticketId.toString())
+  io.to(updatedStatusRoomName)
+    .to(notificationRoomName)
+    .to(ticketRoomName)
     .emit("ticket", {
       action: "update",
       ticket: updatedTicket
@@ -132,3 +148,4 @@ const UpdateTicketService = async ({
 };
 
 export default UpdateTicketService;
+

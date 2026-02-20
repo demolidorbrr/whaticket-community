@@ -1,9 +1,19 @@
 import Whatsapp from "../../models/Whatsapp";
 import AppError from "../../errors/AppError";
 import Queue from "../../models/Queue";
+import { getTenantContext } from "../../libs/tenantContext";
 
 const ShowWhatsAppService = async (id: string | number): Promise<Whatsapp> => {
-  const whatsapp = await Whatsapp.findByPk(id, {
+  const tenantContext = getTenantContext();
+  // Em requests autenticadas, impede acesso cruzado entre empresas.
+  const where: { id: string | number; companyId?: number } = { id };
+
+  if (tenantContext?.companyId) {
+    where.companyId = tenantContext.companyId;
+  }
+
+  const whatsapp = await Whatsapp.findOne({
+    where,
     include: [
       {
         model: Queue,

@@ -1,4 +1,4 @@
-import {
+﻿import {
   Table,
   Column,
   CreatedAt,
@@ -10,22 +10,58 @@ import {
   Default,
   AllowNull,
   HasMany,
-  Unique,
-  BelongsToMany
+  BelongsToMany,
+  ForeignKey,
+  BelongsTo,
+  BeforeFind,
+  BeforeCount,
+  BeforeBulkUpdate,
+  BeforeBulkDestroy,
+  BeforeCreate,
+  BeforeBulkCreate
 } from "sequelize-typescript";
 import Queue from "./Queue";
 import Ticket from "./Ticket";
 import WhatsappQueue from "./WhatsappQueue";
+import Company from "./Company";
+import {
+  applyTenantScope,
+  applyTenantScopeToBulkInstances,
+  applyTenantScopeToInstance
+} from "../helpers/ApplyTenantScope";
 
 @Table
 class Whatsapp extends Model<Whatsapp> {
+  @BeforeFind
+  @BeforeCount
+  static applyTenantFilter(options: Record<string, unknown>): void {
+    applyTenantScope(options);
+  }
+
+  @BeforeBulkUpdate
+  @BeforeBulkDestroy
+  static applyTenantFilterToBulkOperations(
+    options: Record<string, unknown>
+  ): void {
+    applyTenantScope(options);
+  }
+
+  @BeforeCreate
+  static assignCompanyId(instance: Whatsapp): void {
+    applyTenantScopeToInstance(instance);
+  }
+
+  @BeforeBulkCreate
+  static assignCompanyIdToBulk(instances: Whatsapp[]): void {
+    applyTenantScopeToBulkInstances(instances);
+  }
+
   @PrimaryKey
   @AutoIncrement
   @Column
   id: number;
 
   @AllowNull
-  @Unique
   @Column(DataType.TEXT)
   name: string;
 
@@ -58,6 +94,13 @@ class Whatsapp extends Model<Whatsapp> {
   @Column
   isDefault: boolean;
 
+  @ForeignKey(() => Company)
+  @Column
+  companyId: number;
+
+  @BelongsTo(() => Company)
+  company: Company;
+
   @CreatedAt
   createdAt: Date;
 
@@ -75,3 +118,4 @@ class Whatsapp extends Model<Whatsapp> {
 }
 
 export default Whatsapp;
+
