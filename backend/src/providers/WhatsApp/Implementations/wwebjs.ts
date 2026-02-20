@@ -209,7 +209,8 @@ const convertToMessagePayload = async (
     from: processedMsg.from,
     to: processedMsg.to,
     hasQuotedMsg: processedMsg.hasQuotedMsg,
-    quotedMsgId
+    quotedMsgId,
+    ack: mapMessageAck(processedMsg.ack)
   };
 };
 

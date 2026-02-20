@@ -45,7 +45,7 @@ const RunScheduledMessagesService = async (): Promise<void> => {
             fromMe: true,
             read: true,
             mediaType: (sentMessage as any).type || "chat",
-            ack: sentMessage.ack !== undefined ? sentMessage.ack : 0
+            ack: sentMessage.ack !== undefined ? sentMessage.ack : 1
           }
         });
 

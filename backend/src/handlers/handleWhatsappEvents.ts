@@ -26,6 +26,27 @@ import { MessageType, MessageAck } from "../providers/WhatsApp/types";
 
 const writeFileAsync = promisify(writeFile);
 
+const pendingMessageAcks = new Map<string, MessageAck>();
+
+const mergeAck = (currentAck: number | undefined, incomingAck?: MessageAck): MessageAck => {
+  const safeCurrent = typeof currentAck === "number" ? currentAck : 0;
+  const safeIncoming = typeof incomingAck === "number" ? incomingAck : safeCurrent;
+  return Math.max(safeCurrent, safeIncoming) as MessageAck;
+};
+
+const storePendingAck = (messageId: string, ack: MessageAck): void => {
+  const current = pendingMessageAcks.get(messageId);
+  pendingMessageAcks.set(messageId, mergeAck(current, ack));
+};
+
+const consumePendingAck = (messageId: string): MessageAck | undefined => {
+  const ack = pendingMessageAcks.get(messageId);
+  if (ack !== undefined) {
+    pendingMessageAcks.delete(messageId);
+  }
+  return ack;
+};
+
 export interface ContactPayload {
   name: string;
   number: string;
@@ -259,6 +280,11 @@ export const handleMessage = async (
               : existingOutgoingMessage.ack
         };
 
+        const pendingAck = consumePendingAck(processedMessage.id);
+        if (pendingAck !== undefined) {
+          messageData.ack = mergeAck(messageData.ack, pendingAck);
+        }
+
         if (mediaPayload && processedMessage.hasMedia) {
           const filename = await saveMediaFile(mediaPayload);
           messageData.mediaUrl = filename;
@@ -320,8 +346,18 @@ export const handleMessage = async (
       read: processedMessage.fromMe,
       mediaType: processedMessage.type,
       quotedMsgId: resolvedQuotedMsgId,
-      ack: processedMessage.ack !== undefined ? processedMessage.ack : 0
+      ack:
+        processedMessage.ack !== undefined
+          ? processedMessage.ack
+          : processedMessage.fromMe
+            ? 1
+            : 0
     };
+
+    const pendingAck = consumePendingAck(processedMessage.id);
+    if (pendingAck !== undefined) {
+      messageData.ack = mergeAck(messageData.ack, pendingAck);
+    }
 
     if (mediaPayload && processedMessage.hasMedia) {
       const filename = await saveMediaFile(mediaPayload);
@@ -403,10 +439,12 @@ export const handleMessageAck = async (
     });
 
     if (!messageToUpdate) {
+      storePendingAck(messageId, ack);
       return;
     }
 
-    await messageToUpdate.update({ ack });
+    const mergedAck = mergeAck(messageToUpdate.ack, ack);
+    await messageToUpdate.update({ ack: mergedAck });
 
     io.to(messageToUpdate.ticketId.toString()).emit("appMessage", {
       action: "update",

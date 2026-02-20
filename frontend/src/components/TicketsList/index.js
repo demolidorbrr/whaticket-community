@@ -309,7 +309,7 @@ const reducer = (state, action) => {
   }, [ticketsList]);
 
   const groupedTickets = useMemo(() => {
-    const shouldGroupByUser = status === "open" || status === "pending" || status === "group";
+    const shouldGroupByUser = status === "open" || status === "pending";
     if (!shouldGroupByUser) {
       return null;
     }

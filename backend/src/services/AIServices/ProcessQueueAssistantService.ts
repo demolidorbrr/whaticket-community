@@ -306,7 +306,7 @@ const ProcessQueueAssistantService = async ({
           fromMe: true,
           read: true,
           mediaType: sentMessage.type,
-          ack: sentMessage.ack !== undefined ? sentMessage.ack : 0
+          ack: sentMessage.ack !== undefined ? sentMessage.ack : 1
         }
       });
 

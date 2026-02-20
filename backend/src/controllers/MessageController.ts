@@ -74,7 +74,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
         read: true,
         mediaType: sentMessage.type,
         quotedMsgId: quotedMsg?.id,
-        ack: sentMessage.ack !== undefined ? sentMessage.ack : 0
+        ack: sentMessage.ack !== undefined ? sentMessage.ack : 1
       }
     });
   }
