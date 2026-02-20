@@ -19,7 +19,7 @@ type IndexQuery = {
 };
 
 type MessageData = {
-  body: string;
+  body: string | string[];
   fromMe: boolean;
   read: boolean;
   quotedMsg?: Message;
@@ -42,6 +42,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const { ticketId } = req.params;
   const { body, quotedMsg }: MessageData = req.body;
+  const normalizedBody = Array.isArray(body) ? body[0] : body;
   const medias = req.files as Express.Multer.File[];
 
   const ticket = await ShowTicketService(ticketId);
@@ -56,20 +57,25 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
     await Promise.all(
       medias.map(async (media: Express.Multer.File) => {
-        await SendWhatsAppMedia({ media, ticket });
+        await SendWhatsAppMedia({
+          media,
+          ticket,
+          body: normalizedBody,
+          quotedMsgId: quotedMsg?.id
+        });
       })
     );
   } else {
     const sentMessage = isWhatsAppChannel
-      ? await SendWhatsAppMessage({ body, ticket, quotedMsg })
-      : await SendChannelMessageService({ body, ticket, quotedMsg });
+      ? await SendWhatsAppMessage({ body: normalizedBody, ticket, quotedMsg })
+      : await SendChannelMessageService({ body: normalizedBody, ticket, quotedMsg });
 
     await CreateMessageService({
       messageData: {
         id: sentMessage.id,
         ticketId: ticket.id,
         contactId: ticket.contactId,
-        body: sentMessage.body || body,
+        body: sentMessage.body || normalizedBody,
         fromMe: true,
         read: true,
         mediaType: sentMessage.type,

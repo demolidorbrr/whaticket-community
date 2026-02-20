@@ -89,6 +89,26 @@ const buildLastMessagePreview = (
   return "";
 };
 
+const resolveMessageCreatedAt = (timestamp?: number): Date | undefined => {
+  const numericTimestamp = Number(timestamp);
+
+  if (!Number.isFinite(numericTimestamp) || numericTimestamp <= 0) {
+    return undefined;
+  }
+
+  const timestampInMs =
+    numericTimestamp > 1_000_000_000_000
+      ? numericTimestamp
+      : numericTimestamp * 1000;
+
+  const createdAt = new Date(timestampInMs);
+  if (Number.isNaN(createdAt.getTime())) {
+    return undefined;
+  }
+
+  return createdAt;
+};
+
 export interface ContactPayload {
   name: string;
   number: string;
@@ -302,6 +322,7 @@ export const handleMessage = async (
     const resolvedQuotedMsgId = await resolveQuotedMessageId(
       processedMessage.quotedMsgId
     );
+    const messageCreatedAt = resolveMessageCreatedAt(processedMessage.timestamp);
 
     if (processedMessage.fromMe) {
       const existingOutgoingMessage = await Message.findByPk(processedMessage.id);
@@ -321,6 +342,11 @@ export const handleMessage = async (
               ? processedMessage.ack
               : existingOutgoingMessage.ack
         };
+
+        if (messageCreatedAt && !existingOutgoingMessage.createdAt) {
+          messageData.createdAt = messageCreatedAt;
+          messageData.updatedAt = messageCreatedAt;
+        }
 
         const pendingAck = consumePendingAck(processedMessage.id);
         if (pendingAck !== undefined) {
@@ -395,6 +421,11 @@ export const handleMessage = async (
             ? 1
             : 0
     };
+
+    if (messageCreatedAt) {
+      messageData.createdAt = messageCreatedAt;
+      messageData.updatedAt = messageCreatedAt;
+    }
 
     const pendingAck = consumePendingAck(processedMessage.id);
     if (pendingAck !== undefined) {

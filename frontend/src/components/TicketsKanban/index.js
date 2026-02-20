@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useHistory } from "react-router-dom";
 import openSocket from "../../services/socket-io";
 import {
@@ -120,7 +120,13 @@ const STATUS_COLUMNS = [
   { key: "closed", label: "Fechado", type: "status", status: "closed" }
 ];
 
+const isPersonTicket = ticket => !ticket?.isGroup;
+
 const upsertTicket = (list, ticket) => {
+  if (!isPersonTicket(ticket)) {
+    return list.filter(item => item.id !== ticket?.id);
+  }
+
   const index = list.findIndex(item => item.id === ticket.id);
   if (index >= 0) {
     const next = [...list];
@@ -148,6 +154,7 @@ const TicketsKanban = ({
   const [dragOver, setDragOver] = useState("");
   const [dragContext, setDragContext] = useState(null);
   const [tickets, setTickets] = useState([]);
+  const dragGuardRef = useRef(false);
 
   const queueIds = useMemo(
     () => JSON.stringify(selectedQueueIds || []),
@@ -221,6 +228,10 @@ const TicketsKanban = ({
     });
 
     tickets.forEach(ticket => {
+      if (!isPersonTicket(ticket)) {
+        return;
+      }
+
       if (!isTicketVisible(ticket)) {
         return;
       }
@@ -289,6 +300,10 @@ const TicketsKanban = ({
       ];
 
       const unique = merged.reduce((acc, item) => {
+        if (!isPersonTicket(item)) {
+          return acc;
+        }
+
         if (!acc.some(ticket => ticket.id === item.id)) {
           acc.push(item);
         }
@@ -338,6 +353,8 @@ const TicketsKanban = ({
   }, []);
 
   const handleDragStart = (e, ticket, sourceColumnKey) => {
+    dragGuardRef.current = true;
+
     const payload = {
       ticketId: Number(ticket.id),
       sourceColumnKey
@@ -511,16 +528,23 @@ const TicketsKanban = ({
                     draggable
                     onDragStart={e => handleDragStart(e, ticket, column.key)}
                     onDragEnd={() => {
+                      setTimeout(() => {
+                        dragGuardRef.current = false;
+                      }, 0);
                       setDragContext(null);
                       setDragOver("");
                     }}
-                    onDoubleClick={() => onOpenTicket(ticket.id)}
-                    title="Duplo clique para abrir conversa"
+                    onClick={() => {
+                      if (dragGuardRef.current) {
+                        return;
+                      }
+                      onOpenTicket(ticket.id);
+                    }}
+                    title="Clique para abrir conversa"
                   >
                     <div className={classes.ticketTitle}>
-                      {ticket.contact?.name || `Atendimento #${ticket.id}`}
+                      {ticket.contact?.name || "Atendimento"}
                     </div>
-                    <div className={classes.ticketMeta}>#{ticket.id}</div>
                     <div className={classes.ticketMessage}>
                       {ticket.lastMessage || "Sem mensagem"}
                     </div>

@@ -416,6 +416,10 @@ const MessagesList = ({ ticketId, isGroup }) => {
   };
 
   const checkMessageMedia = (message) => {
+    const isWebpFile = Boolean(
+      message.mediaUrl && /\.webp($|\?)/i.test(message.mediaUrl)
+    );
+
     if (message.mediaType === "location" && message.body.split('|').length >= 2) {
       let locationParts = message.body.split('|')
       let imageLocation = locationParts[0]
@@ -465,7 +469,7 @@ const MessagesList = ({ ticketId, isGroup }) => {
         )
       } else return (<></>)
     }*/
-    else if ( /^.*\.(jpe?g|png|gif)?$/i.exec(message.mediaUrl) && message.mediaType === "image") {
+    else if (message.mediaUrl && (["image", "sticker"].includes(message.mediaType) || isWebpFile)) {
       return <ModalImageCors imageUrl={message.mediaUrl} />;
     } else if (message.mediaType === "audio") {
       return <Audio url={message.mediaUrl} />
