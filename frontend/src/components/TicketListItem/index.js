@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useContext } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 import { useHistory, useParams } from "react-router-dom";
 import { format } from "date-fns";
@@ -18,9 +18,7 @@ import { i18n } from "../../translate/i18n";
 
 import api from "../../services/api";
 import ButtonWithSpinner from "../ButtonWithSpinner";
-import MarkdownWrapper from "../MarkdownWrapper";
 import { Tooltip } from "@material-ui/core";
-import { AuthContext } from "../../context/Auth/AuthContext";
 import toastError from "../../errors/toastError";
 
 const useStyles = makeStyles(theme => ({
@@ -58,6 +56,8 @@ const useStyles = makeStyles(theme => ({
 	contactNameWrapper: {
 		display: "flex",
 		justifyContent: "space-between",
+		alignItems: "center",
+		gap: 8,
 	},
 
 	lastMessageTime: {
@@ -89,7 +89,26 @@ const useStyles = makeStyles(theme => ({
 	},
 
 	contactLastMessage: {
-		paddingRight: 20,
+		flex: "0 0 50%",
+		maxWidth: "50%",
+		minWidth: 0,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap",
+	},
+	secondaryRow: {
+		display: "flex",
+		alignItems: "center",
+		gap: 8,
+		width: "100%",
+	},
+	metadataWrapper: {
+		display: "flex",
+		alignItems: "center",
+		gap: 6,
+		minWidth: 0,
+		flex: "1 1 auto",
+		overflow: "hidden",
 	},
 
 	newMessagesCount: {
@@ -99,18 +118,26 @@ const useStyles = makeStyles(theme => ({
 	},
   queueTag: {
     alignSelf: "center",
-    marginRight: 8,
-    background: "#E9EDF5",
-    color: "#3F4D67",
-    border: "1px solid #D7DEEA",
     padding: "1px 6px",
     borderRadius: 10,
     fontSize: 11,
-    maxWidth: 130,
+    maxWidth: 120,
+    minWidth: 0,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap"
   },
+	ticketTag: {
+		alignSelf: "center",
+		padding: "1px 6px",
+		borderRadius: 10,
+		fontSize: 11,
+		maxWidth: 120,
+		minWidth: 0,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap",
+	},
 
 	badgeStyle: {
 		color: "white",
@@ -133,13 +160,60 @@ const useStyles = makeStyles(theme => ({
 
 }));
 
+const getContrastTextColor = (hexColor, fallback = "#ffffff") => {
+	if (!hexColor || typeof hexColor !== "string" || !hexColor.startsWith("#")) {
+		return fallback;
+	}
+
+	const hex = hexColor.replace("#", "");
+	const normalized = hex.length === 3
+		? hex
+			.split("")
+			.map(char => char + char)
+			.join("")
+		: hex;
+
+	if (normalized.length !== 6) {
+		return fallback;
+	}
+
+	const red = parseInt(normalized.slice(0, 2), 16);
+	const greenValue = parseInt(normalized.slice(2, 4), 16);
+	const blue = parseInt(normalized.slice(4, 6), 16);
+
+	if ([red, greenValue, blue].some(Number.isNaN)) {
+		return fallback;
+	}
+
+	const luminance = (0.299 * red + 0.587 * greenValue + 0.114 * blue) / 255;
+	return luminance > 0.62 ? "#1f2937" : "#ffffff";
+};
+
+const normalizeTag = tag => {
+	if (!tag) return null;
+	if (typeof tag === "string") {
+		return { id: tag, name: tag, color: "#607d8b" };
+	}
+
+	if (typeof tag === "object") {
+		const name = tag.name || (tag.id ? String(tag.id) : "");
+		if (!name) return null;
+		return {
+			id: tag.id || name,
+			name,
+			color: tag.color || "#607d8b",
+		};
+	}
+
+	return null;
+};
+
 const TicketListItem = ({ ticket }) => {
 	const classes = useStyles();
 	const history = useHistory();
 	const [loading, setLoading] = useState(false);
 	const { ticketId } = useParams();
 	const isMounted = useRef(true);
-	const { user } = useContext(AuthContext);
 	const parseDateWithUtcFallback = value => {
 		if (!value) return null;
 		if (value instanceof Date) return value;
@@ -161,6 +235,14 @@ const TicketListItem = ({ ticket }) => {
 		ticket.lastMessageAtTs || ticket.lastMessageAt || ticket.createdAt || ticket.updatedAt;
 	const lastInteractionDate = parseDateWithUtcFallback(lastInteractionRaw);
 	const hasValidInteractionDate = !Number.isNaN(lastInteractionDate?.getTime?.());
+	const queueColor = ticket.queue?.color || "#7C7C7C";
+	const queueLabel = ticket.queue?.name || "Sem fila";
+	const primaryTag = Array.isArray(ticket.tags)
+		? normalizeTag(ticket.tags.find(Boolean))
+		: null;
+	const ticketPreview = (ticket.lastMessage || "Sem mensagem")
+		.replace(/\s+/g, " ")
+		.trim();
 
 	useEffect(() => {
 		return () => {
@@ -226,7 +308,7 @@ const TicketListItem = ({ ticket }) => {
 								variant="body2"
 								color="textPrimary"
 							>
-								{ticket.contact.name}
+								{ticket.contact?.name || "Sem contato"}
 							</Typography>
 							{ticket.status === "closed" && (
 								<Badge
@@ -257,23 +339,42 @@ const TicketListItem = ({ ticket }) => {
 						</span>
 					}
 					secondary={
-						<span className={classes.contactNameWrapper}>
+						<span className={classes.secondaryRow}>
 							<Typography
 								className={classes.contactLastMessage}
-								noWrap
 								component="span"
 								variant="body2"
 								color="textSecondary"
+								title={ticketPreview}
 							>
-								{ticket.lastMessage ? (
-									<MarkdownWrapper>{ticket.lastMessage}</MarkdownWrapper>
-								) : (
-									<br />
-								)}
+								{ticketPreview}
 							</Typography>
-              <div className={classes.queueTag} title={ticket.queue?.name || "Sem fila"}>
-                {ticket.queue?.name || "Sem fila"}
-              </div>
+							<span className={classes.metadataWrapper}>
+								<span
+									className={classes.queueTag}
+									title={queueLabel}
+									style={{
+										backgroundColor: queueColor,
+										color: getContrastTextColor(queueColor),
+										border: `1px solid ${queueColor}`,
+									}}
+								>
+									{queueLabel}
+								</span>
+								{primaryTag ? (
+									<span
+										className={classes.ticketTag}
+										title={primaryTag.name}
+										style={{
+											backgroundColor: primaryTag.color || "#607d8b",
+											color: getContrastTextColor(primaryTag.color || "#607d8b"),
+											border: `1px solid ${primaryTag.color || "#607d8b"}`,
+										}}
+									>
+										{primaryTag.name}
+									</span>
+								) : null}
+							</span>
 
 							<Badge
 								className={classes.newMessagesCount}

@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useHistory } from "react-router-dom";
 import openSocket from "../../services/socket-io";
 import {
@@ -154,6 +154,7 @@ const TicketsKanban = ({
   const [dragOver, setDragOver] = useState("");
   const [dragContext, setDragContext] = useState(null);
   const [tickets, setTickets] = useState([]);
+  const dragGuardRef = useRef(false);
 
   const queueIds = useMemo(
     () => JSON.stringify(selectedQueueIds || []),
@@ -352,6 +353,8 @@ const TicketsKanban = ({
   }, []);
 
   const handleDragStart = (e, ticket, sourceColumnKey) => {
+    dragGuardRef.current = true;
+
     const payload = {
       ticketId: Number(ticket.id),
       sourceColumnKey
@@ -525,16 +528,23 @@ const TicketsKanban = ({
                     draggable
                     onDragStart={e => handleDragStart(e, ticket, column.key)}
                     onDragEnd={() => {
+                      setTimeout(() => {
+                        dragGuardRef.current = false;
+                      }, 0);
                       setDragContext(null);
                       setDragOver("");
                     }}
-                    onDoubleClick={() => onOpenTicket(ticket.id)}
-                    title="Duplo clique para abrir conversa"
+                    onClick={() => {
+                      if (dragGuardRef.current) {
+                        return;
+                      }
+                      onOpenTicket(ticket.id);
+                    }}
+                    title="Clique para abrir conversa"
                   >
                     <div className={classes.ticketTitle}>
-                      {ticket.contact?.name || `Atendimento #${ticket.id}`}
+                      {ticket.contact?.name || "Atendimento"}
                     </div>
-                    <div className={classes.ticketMeta}>#{ticket.id}</div>
                     <div className={classes.ticketMessage}>
                       {ticket.lastMessage || "Sem mensagem"}
                     </div>
