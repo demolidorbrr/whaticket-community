@@ -17,6 +17,7 @@ import AccountTreeOutlinedIcon from "@material-ui/icons/AccountTreeOutlined";
 import QuestionAnswerOutlinedIcon from "@material-ui/icons/QuestionAnswerOutlined";
 import LocalOfferOutlinedIcon from "@material-ui/icons/LocalOfferOutlined";
 import ViewColumnOutlinedIcon from "@material-ui/icons/ViewColumnOutlined";
+import EventNoteOutlinedIcon from "@material-ui/icons/EventNoteOutlined";
 
 import { i18n } from "../translate/i18n";
 import { WhatsAppsContext } from "../context/WhatsApp/WhatsAppsContext";
@@ -95,6 +96,11 @@ const MainListItems = (props) => {
         to="/quickAnswers"
         primary={i18n.t("mainDrawer.listItems.quickAnswers")}
         icon={<QuestionAnswerOutlinedIcon />}
+      />
+      <ListItemLink
+        to="/schedules"
+        primary="Agendamentos"
+        icon={<EventNoteOutlinedIcon />}
       />
       <Can
         role={user.profile}

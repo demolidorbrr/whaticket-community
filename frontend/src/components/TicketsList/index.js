@@ -315,6 +315,30 @@ const reducer = (state, action) => {
     }
 
     const groupsMap = new Map();
+    const parseDateWithUtcFallback = value => {
+      if (!value) return null;
+      if (value instanceof Date) return value;
+      if (typeof value !== "string") return new Date(value);
+
+      const normalized = value.includes("T") ? value : value.replace(" ", "T");
+      const hasTimezone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(normalized);
+
+      return new Date(hasTimezone ? normalized : `${normalized}Z`);
+    };
+
+    const getLastInteractionTime = ticket => {
+      const rawDate = ticket.lastMessageAt || ticket.createdAt || ticket.updatedAt;
+      const parsedTime = parseDateWithUtcFallback(rawDate)?.getTime?.();
+      return Number.isNaN(parsedTime) ? 0 : parsedTime;
+    };
+
+    groupsMap.set("unassigned", {
+      key: "unassigned",
+      title: "Atendimento a distribuir",
+      sortLabel: "",
+      isUnassigned: true,
+      tickets: []
+    });
 
     ticketsList.forEach(ticket => {
       const hasAssignedUser = Boolean(ticket.user?.id);
@@ -337,7 +361,7 @@ const reducer = (state, action) => {
       groupsMap.get(groupKey).tickets.push(ticket);
     });
 
-    return Array.from(groupsMap.values()).sort((a, b) => {
+    const sortedGroups = Array.from(groupsMap.values()).sort((a, b) => {
       if (a.isUnassigned && !b.isUnassigned) return -1;
       if (!a.isUnassigned && b.isUnassigned) return 1;
 
@@ -345,6 +369,19 @@ const reducer = (state, action) => {
         sensitivity: "base"
       });
     });
+
+    sortedGroups.forEach(group => {
+      group.tickets.sort((a, b) => {
+        const timeDiff = getLastInteractionTime(b) - getLastInteractionTime(a);
+        if (timeDiff !== 0) return timeDiff;
+
+        return (a.contact?.name || "").localeCompare(b.contact?.name || "", "pt-BR", {
+          sensitivity: "base"
+        });
+      });
+    });
+
+    return sortedGroups;
   }, [ticketsList, status]);
 
 	const loadMore = () => {

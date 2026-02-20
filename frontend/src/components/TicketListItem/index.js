@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useContext } from "react";
 
 import { useHistory, useParams } from "react-router-dom";
-import { parseISO, format } from "date-fns";
+import { format } from "date-fns";
 import clsx from "clsx";
 
 import { makeStyles } from "@material-ui/core/styles";
@@ -140,11 +140,19 @@ const TicketListItem = ({ ticket }) => {
 	const { ticketId } = useParams();
 	const isMounted = useRef(true);
 	const { user } = useContext(AuthContext);
+	const parseDateWithUtcFallback = value => {
+		if (!value) return null;
+		if (value instanceof Date) return value;
+		if (typeof value !== "string") return new Date(value);
+
+		const normalized = value.includes("T") ? value : value.replace(" ", "T");
+		const hasTimezone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(normalized);
+
+		return new Date(hasTimezone ? normalized : `${normalized}Z`);
+	};
+
 	const lastInteractionRaw = ticket.lastMessageAt || ticket.createdAt || ticket.updatedAt;
-	const lastInteractionDate =
-		typeof lastInteractionRaw === "string"
-			? parseISO(lastInteractionRaw)
-			: new Date(lastInteractionRaw);
+	const lastInteractionDate = parseDateWithUtcFallback(lastInteractionRaw);
 	const hasValidInteractionDate = !Number.isNaN(lastInteractionDate?.getTime?.());
 
 	useEffect(() => {
@@ -256,8 +264,8 @@ const TicketListItem = ({ ticket }) => {
 									<br />
 								)}
 							</Typography>
-              <div className={classes.queueTag} title={ticket.queue?.name || "A distribuir"}>
-                {ticket.queue?.name || "A distribuir"}
+              <div className={classes.queueTag} title={ticket.queue?.name || "Sem fila"}>
+                {ticket.queue?.name || "Sem fila"}
               </div>
 
 							<Badge

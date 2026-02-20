@@ -7,6 +7,8 @@ import { i18n } from "../../translate/i18n";
 import api from "../../services/api";
 import ConfirmationModal from "../ConfirmationModal";
 import TransferTicketModal from "../TransferTicketModal";
+import ChangeQueueModal from "../ChangeQueueModal";
+import ScheduleTicketModal from "../ScheduleTicketModal";
 import toastError from "../../errors/toastError";
 import { Can } from "../Can";
 import { AuthContext } from "../../context/Auth/AuthContext";
@@ -14,6 +16,8 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 const TicketOptionsMenu = ({ ticket, menuOpen, handleClose, anchorEl }) => {
 	const [confirmationOpen, setConfirmationOpen] = useState(false);
 	const [transferTicketModalOpen, setTransferTicketModalOpen] = useState(false);
+	const [changeQueueModalOpen, setChangeQueueModalOpen] = useState(false);
+	const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
 	const isMounted = useRef(true);
 	const { user } = useContext(AuthContext);
 
@@ -47,6 +51,28 @@ const TicketOptionsMenu = ({ ticket, menuOpen, handleClose, anchorEl }) => {
 		}
 	};
 
+	const handleOpenChangeQueueModal = () => {
+		setChangeQueueModalOpen(true);
+		handleClose();
+	};
+
+	const handleCloseChangeQueueModal = () => {
+		if (isMounted.current) {
+			setChangeQueueModalOpen(false);
+		}
+	};
+
+	const handleOpenScheduleModal = () => {
+		setScheduleModalOpen(true);
+		handleClose();
+	};
+
+	const handleCloseScheduleModal = () => {
+		if (isMounted.current) {
+			setScheduleModalOpen(false);
+		}
+	};
+
 	return (
 		<>
 			<Menu
@@ -67,6 +93,12 @@ const TicketOptionsMenu = ({ ticket, menuOpen, handleClose, anchorEl }) => {
 			>
 				<MenuItem onClick={handleOpenTransferModal}>
 					{i18n.t("ticketOptionsMenu.transfer")}
+				</MenuItem>
+				<MenuItem onClick={handleOpenChangeQueueModal}>
+					Alterar fila
+				</MenuItem>
+				<MenuItem onClick={handleOpenScheduleModal}>
+					Agendar
 				</MenuItem>
 				<Can
 					role={user.profile}
@@ -95,6 +127,16 @@ const TicketOptionsMenu = ({ ticket, menuOpen, handleClose, anchorEl }) => {
 				onClose={handleCloseTransferTicketModal}
 				ticketid={ticket.id}
 				ticketWhatsappId={ticket.whatsappId}
+			/>
+			<ChangeQueueModal
+				modalOpen={changeQueueModalOpen}
+				onClose={handleCloseChangeQueueModal}
+				ticket={ticket}
+			/>
+			<ScheduleTicketModal
+				modalOpen={scheduleModalOpen}
+				onClose={handleCloseScheduleModal}
+				ticket={ticket}
 			/>
 		</>
 	);

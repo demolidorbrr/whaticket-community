@@ -5,6 +5,7 @@ import { logger } from "./utils/logger";
 import { initRedis } from "./libs/redisStore";
 import { StartAllWhatsAppsSessions } from "./services/WbotServices/StartAllWhatsAppsSessions";
 import RunSLAEscalationService from "./services/SLAServices/RunSLAEscalationService";
+import RunScheduledMessagesService from "./services/ScheduleServices/RunScheduledMessagesService";
 
 const server = app.listen(process.env.PORT, () => {
   logger.info(`Server started on port: ${process.env.PORT}`);
@@ -18,6 +19,11 @@ setInterval(() => {
     logger.error({ info: "Error running SLA escalation service", err })
   );
 }, 60 * 1000);
+setInterval(() => {
+  RunScheduledMessagesService().catch(err =>
+    logger.error({ info: "Error running scheduled messages service", err })
+  );
+}, 30 * 1000);
 gracefulShutdown(server);
 
 process.on("uncaughtException", err => {

@@ -14,6 +14,7 @@ import WppKey from "../models/WppKey";
 import Tag from "../models/Tag";
 import TicketTag from "../models/TicketTag";
 import TicketEvent from "../models/TicketEvent";
+import Schedule from "../models/Schedule";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -36,7 +37,8 @@ const models = [
   WppKey,
   Tag,
   TicketTag,
-  TicketEvent
+  TicketEvent,
+  Schedule
 ];
 
 sequelize.addModels(models);

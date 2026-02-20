@@ -14,6 +14,7 @@ import apiRoutes from "./apiRoutes";
 import tagRoutes from "./tagRoutes";
 import metricsRoutes from "./metricsRoutes";
 import channelRoutes from "./channelRoutes";
+import scheduleRoutes from "./scheduleRoutes";
 
 const routes = Router();
 
@@ -30,6 +31,7 @@ routes.use(quickAnswerRoutes);
 routes.use(tagRoutes);
 routes.use(metricsRoutes);
 routes.use(channelRoutes);
+routes.use(scheduleRoutes);
 routes.use("/api/messages", apiRoutes);
 
 export default routes;
