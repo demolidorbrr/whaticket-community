@@ -173,7 +173,7 @@ const TicketListItem = ({ ticket }) => {
 		try {
 			await api.put(`/tickets/${id}`, {
 				status: "open",
-				userId: user?.id,
+				userId: null,
 			});
 		} catch (err) {
 			setLoading(false);

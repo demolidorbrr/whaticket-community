@@ -123,7 +123,7 @@ const TicketActionButtons = ({ ticket }) => {
 						size="small"
 						variant="contained"
 						color="primary"
-						onClick={e => handleUpdateTicketStatus(e, "open", user?.id)}
+						onClick={e => handleUpdateTicketStatus(e, "open", null)}
 					>
 						{i18n.t("messagesList.header.buttons.accept")}
 					</ButtonWithSpinner>

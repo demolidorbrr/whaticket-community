@@ -60,13 +60,6 @@ const reducer = (state, action) => {
   return state;
 };
 
-const statusChipColor = status => {
-  if (status === "sent") return "primary";
-  if (status === "completed") return "primary";
-  if (status === "failed") return "secondary";
-  return "default";
-};
-
 const statusLabel = status => {
   if (status === "pending") return "Pendente";
   if (status === "sent") return "Enviado";
@@ -77,11 +70,12 @@ const statusLabel = status => {
 };
 
 const statusColor = status => {
+  if (status === "pending") return "#1a73e8";
   if (status === "sent") return "#1a73e8";
   if (status === "completed") return "#0b8043";
-  if (status === "failed") return "#d93025";
-  if (status === "canceled") return "#5f6368";
-  return "#0f9d58";
+  if (status === "canceled") return "#d93025";
+  if (status === "failed") return "#b31412";
+  return "#1a73e8";
 };
 
 const parseDateWithFallback = value => {
@@ -410,8 +404,12 @@ const Schedules = () => {
                 <TableCell align="center">
                   <Chip
                     size="small"
-                    color={statusChipColor(schedule.status)}
                     label={statusLabel(schedule.status)}
+                    style={{
+                      backgroundColor: statusColor(schedule.status),
+                      color: "#fff",
+                      fontWeight: 600
+                    }}
                   />
                 </TableCell>
                 <TableCell align="center">{schedule.user?.name || "-"}</TableCell>
