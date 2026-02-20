@@ -11,6 +11,9 @@ import WhatsappQueue from "../models/WhatsappQueue";
 import UserQueue from "../models/UserQueue";
 import QuickAnswer from "../models/QuickAnswer";
 import WppKey from "../models/WppKey";
+import Tag from "../models/Tag";
+import TicketTag from "../models/TicketTag";
+import TicketEvent from "../models/TicketEvent";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -30,7 +33,10 @@ const models = [
   WhatsappQueue,
   UserQueue,
   QuickAnswer,
-  WppKey
+  WppKey,
+  Tag,
+  TicketTag,
+  TicketEvent
 ];
 
 sequelize.addModels(models);

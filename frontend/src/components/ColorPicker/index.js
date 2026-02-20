@@ -1,5 +1,5 @@
 import { Dialog } from "@material-ui/core";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import { GithubPicker } from "react-color";
 
@@ -59,8 +59,15 @@ const ColorPicker = ({ onChange, currentColor, handleClose, open }) => {
     "#AB149E",
   ];
 
-  const handleChange = (color) => {
+  useEffect(() => {
+    if (open) {
+      setSelectedColor(currentColor);
+    }
+  }, [currentColor, open]);
+
+  const handleSelectColor = (color) => {
     setSelectedColor(color.hex);
+    onChange(color.hex);
     handleClose();
   };
 
@@ -71,14 +78,16 @@ const ColorPicker = ({ onChange, currentColor, handleClose, open }) => {
       open={open}
       maxWidth="xs"
       paperFullWidth
+      disableAutoFocus
+      disableEnforceFocus
+      disableRestoreFocus
     >
       <GithubPicker
         width={"100%"}
         triangle="hide"
         color={selectedColor}
         colors={colors}
-        onChange={handleChange}
-        onChangeComplete={(color) => onChange(color.hex)}
+        onChangeComplete={handleSelectColor}
       />
     </Dialog>
   );

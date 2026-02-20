@@ -1,5 +1,12 @@
 _writeFrontendEnvVars() {
-    ENV_JSON="$(jq --compact-output --null-input 'env | with_entries(select(.key | startswith("REACT_APP_")))')"
+    ENV_JSON="$(jq --compact-output --null-input '
+      env as $env
+      | ($env | with_entries(select(.key | startswith("VITE_") or startswith("REACT_APP_"))))
+      + (if ($env.VITE_BACKEND_URL? == null and $env.REACT_APP_BACKEND_URL? != null)
+        then {"VITE_BACKEND_URL": $env.REACT_APP_BACKEND_URL}
+        else {}
+      end)
+    ')"
     ENV_JSON_ESCAPED="$(printf "%s" "${ENV_JSON}" | sed -e 's/[\&/]/\\&/g')"
     sed -i "s/<noscript id=\"env-insertion-point\"><\/noscript>/<script>var ENV=${ENV_JSON_ESCAPED}<\/script>/g" ${PUBLIC_HTML}index.html
 }
@@ -16,12 +23,12 @@ _addSslConfig() {
 
     if [ -f ${SSL_CERTIFICATE} ] && [ -f ${SSL_CERTIFICATE_KEY} ]; then
         echo "saving ssl config in ${FILE_CONF}"
-        echo 'include include.d/ssl-redirect.conf;' >> ${FILE_SSL_CONF};
-        echo 'include "include.d/ssl.conf";' >> ${FILE_CONF};
-        echo "ssl_certificate ${SSL_CERTIFICATE};" >> ${FILE_CONF};
-        echo "ssl_certificate_key ${SSL_CERTIFICATE_KEY};" >> ${FILE_CONF};
+        grep -q 'include include.d/ssl-redirect.conf;' ${FILE_SSL_CONF} || echo 'include include.d/ssl-redirect.conf;' >> ${FILE_SSL_CONF};
+        grep -q 'include "include.d/ssl.conf";' ${FILE_CONF} || echo 'include "include.d/ssl.conf";' >> ${FILE_CONF};
+        grep -q "ssl_certificate ${SSL_CERTIFICATE};" ${FILE_CONF} || echo "ssl_certificate ${SSL_CERTIFICATE};" >> ${FILE_CONF};
+        grep -q "ssl_certificate_key ${SSL_CERTIFICATE_KEY};" ${FILE_CONF} || echo "ssl_certificate_key ${SSL_CERTIFICATE_KEY};" >> ${FILE_CONF};
     else
-        echo 'listen 80;' >> ${FILE_CONF};
+        grep -q 'listen 80;' ${FILE_CONF} || echo 'listen 80;' >> ${FILE_CONF};
         echo "ssl ${1} not found >> ${SSL_CERTIFICATE} -> ${SSL_CERTIFICATE_KEY}"
     fi;
 }

@@ -1,4 +1,6 @@
 import qrCode from "qrcode-terminal";
+import * as fs from "fs";
+import * as path from "path";
 import {
   Client,
   LocalAuth,
@@ -35,6 +37,33 @@ interface Session extends Client {
 }
 
 const sessions: Session[] = [];
+
+const clearChromeProfileLocks = (whatsappId: number): void => {
+  const sessionPath = path.join(
+    process.cwd(),
+    ".wwebjs_auth",
+    `session-bd_${whatsappId}`
+  );
+
+  const staleLockFiles = [
+    "SingletonCookie",
+    "SingletonLock",
+    "SingletonSocket",
+    "DevToolsActivePort"
+  ];
+
+  staleLockFiles.forEach(fileName => {
+    const filePath = path.join(sessionPath, fileName);
+
+    try {
+      fs.rmSync(filePath, { force: true });
+    } catch (err) {
+      logger.warn(
+        `Could not remove stale Chrome lock file ${fileName} from session ${whatsappId}: ${err}`
+      );
+    }
+  });
+};
 
 const getWbot = (whatsappId: number): Session => {
   const sessionIndex = sessions.findIndex(s => s.id === whatsappId);
@@ -96,6 +125,32 @@ const getSerializedMessageId = (
   const serializedMsgId = `${fromMe}_${chatId}_${messageId}`;
 
   return serializedMsgId;
+};
+
+const resolveChatId = async (
+  wbot: Session,
+  chatId: string
+): Promise<string> => {
+  if (!chatId.endsWith("@c.us")) {
+    return chatId;
+  }
+
+  try {
+    const numberId = await wbot.getNumberId(chatId);
+
+    if (!numberId) {
+      throw new AppError("ERR_WAPP_INVALID_CONTACT");
+    }
+
+    const serializedId = (numberId as any)?._serialized;
+    if (serializedId) {
+      return serializedId;
+    }
+  } catch (err) {
+    logger.warn(`Error resolving chatId ${chatId}: ${err}`);
+  }
+
+  return chatId;
 };
 
 const convertToContactPayload = async (
@@ -319,19 +374,25 @@ const sendMessage = async (
   options?: SendMessageOptions
 ): Promise<ProviderMessage> => {
   const wbot = getWbot(sessionId);
+  const resolvedChatId = await resolveChatId(wbot, to);
 
   const quotedMsgSerializedId = options?.quotedMessageId
     ? getSerializedMessageId(
-        to,
+        resolvedChatId,
         Boolean(options?.quotedMessageFromMe),
         options?.quotedMessageId
       )
     : "";
 
-  const sentMessage = await wbot.sendMessage(to, body, {
-    quotedMessageId: quotedMsgSerializedId,
+  const sendOptions: MessageSendOptions = {
     linkPreview: options?.linkPreview
-  });
+  };
+
+  if (quotedMsgSerializedId) {
+    sendOptions.quotedMessageId = quotedMsgSerializedId;
+  }
+
+  const sentMessage = await wbot.sendMessage(resolvedChatId, body, sendOptions);
 
   return convertToProviderMessage(sentMessage);
 };
@@ -343,6 +404,7 @@ const sendMedia = async (
   options?: SendMediaOptions
 ): Promise<ProviderMessage> => {
   const wbot = getWbot(sessionId);
+  const resolvedChatId = await resolveChatId(wbot, to);
 
   const messageMedia = media.path
     ? MessageMedia.fromFilePath(media.path)
@@ -365,7 +427,11 @@ const sendMedia = async (
     mediaOptions.sendMediaAsDocument = options?.sendMediaAsDocument || true;
   }
 
-  const sentMessage = await wbot.sendMessage(to, messageMedia, mediaOptions);
+  const sentMessage = await wbot.sendMessage(
+    resolvedChatId,
+    messageMedia,
+    mediaOptions
+  );
   return convertToProviderMessage(sentMessage);
 };
 
@@ -390,7 +456,8 @@ const getProfilePicUrl = async (
 
 const sendSeen = async (sessionId: number, chatId: string): Promise<void> => {
   const wbot = getWbot(sessionId);
-  const chat = await wbot.getChatById(chatId);
+  const resolvedChatId = await resolveChatId(wbot, chatId);
+  const chat = await wbot.getChatById(resolvedChatId);
   await chat.sendSeen();
 };
 
@@ -400,7 +467,8 @@ const fetchChatMessages = async (
   limit = 100
 ): Promise<ProviderMessage[]> => {
   const wbot = getWbot(sessionId);
-  const chat = await wbot.getChatById(chatId);
+  const resolvedChatId = await resolveChatId(wbot, chatId);
+  const chat = await wbot.getChatById(resolvedChatId);
   const messages = await chat.fetchMessages({ limit });
 
   return messages.map(convertToProviderMessage);
@@ -441,11 +509,13 @@ const deleteMessage = async (
 };
 
 const init = async (whatsapp: Whatsapp): Promise<void> => {
+  const io = getIO();
+  const sessionName = whatsapp.name;
+
   try {
     removeSession(whatsapp.id);
+    clearChromeProfileLocks(whatsapp.id);
 
-    const io = getIO();
-    const sessionName = whatsapp.name;
     const sessionCfg = whatsapp?.session ? JSON.parse(whatsapp.session) : {};
 
     const args: string = process.env.CHROME_ARGS || "";
@@ -465,7 +535,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
           "--no-first-run",
           "--no-zygote",
           "--disable-gpu",
-          ...args.split(" ")
+          ...args.split(" ").filter(Boolean)
         ]
       }
     });
@@ -618,6 +688,37 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     await wbot.initialize();
   } catch (err) {
     logger.error(err, "Error on whatsapp session");
+
+    try {
+      removeSession(whatsapp.id);
+
+      const currentRetries = Number(whatsapp.retries || 0);
+      const nextRetries = currentRetries + 1;
+      const retryDelayMs = Math.min(30000, 5000 * nextRetries);
+
+      await whatsapp.update({
+        status: "OPENING",
+        qrcode: "",
+        retries: nextRetries
+      });
+
+      io.emit("whatsappSession", {
+        action: "update",
+        session: whatsapp
+      });
+
+      logger.warn(
+        `Session ${sessionName} failed during initialization. Retrying in ${
+          retryDelayMs / 1000
+        } seconds...`
+      );
+
+      setTimeout(() => {
+        init(whatsapp);
+      }, retryDelayMs);
+    } catch (retryErr) {
+      logger.error(retryErr, "Error scheduling whatsapp session retry");
+    }
   }
 };
 

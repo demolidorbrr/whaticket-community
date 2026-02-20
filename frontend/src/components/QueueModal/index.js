@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+﻿import React, { useState, useEffect, useRef } from "react";
 
 import * as Yup from "yup";
 import { Formik, Form, Field } from "formik";
@@ -13,6 +13,10 @@ import DialogActions from "@material-ui/core/DialogActions";
 import DialogContent from "@material-ui/core/DialogContent";
 import DialogTitle from "@material-ui/core/DialogTitle";
 import CircularProgress from "@material-ui/core/CircularProgress";
+import FormControlLabel from "@material-ui/core/FormControlLabel";
+import Switch from "@material-ui/core/Switch";
+import MenuItem from "@material-ui/core/MenuItem";
+import Divider from "@material-ui/core/Divider";
 
 import { i18n } from "../../translate/i18n";
 
@@ -61,6 +65,11 @@ const QueueSchema = Yup.object().shape({
 		.required("Required"),
 	color: Yup.string().min(3, "Too Short!").max(9, "Too Long!").required(),
 	greetingMessage: Yup.string(),
+	aiEnabled: Yup.boolean(),
+	aiMode: Yup.string().oneOf(["triage", "initial_reply", "hybrid"]),
+	aiAutoReply: Yup.boolean(),
+	aiPrompt: Yup.string(),
+	aiWebhookUrl: Yup.string().url("URL invalida").nullable().notRequired(),
 });
 
 const QueueModal = ({ open, onClose, queueId }) => {
@@ -68,8 +77,13 @@ const QueueModal = ({ open, onClose, queueId }) => {
 
 	const initialState = {
 		name: "",
-		color: "",
+		color: "#1976d2",
 		greetingMessage: "",
+		aiEnabled: false,
+		aiMode: "triage",
+		aiAutoReply: false,
+		aiPrompt: "",
+		aiWebhookUrl: "",
 	};
 
 	const [colorPickerModalOpen, setColorPickerModalOpen] = useState(false);
@@ -92,8 +106,13 @@ const QueueModal = ({ open, onClose, queueId }) => {
 		return () => {
 			setQueue({
 				name: "",
-				color: "",
+					color: "#1976d2",
 				greetingMessage: "",
+				aiEnabled: false,
+				aiMode: "triage",
+				aiAutoReply: false,
+				aiPrompt: "",
+				aiWebhookUrl: "",
 			});
 		};
 	}, [queueId, open]);
@@ -136,7 +155,7 @@ const QueueModal = ({ open, onClose, queueId }) => {
 						}, 400);
 					}}
 				>
-					{({ touched, errors, isSubmitting, values }) => (
+					{({ touched, errors, isSubmitting, values, setFieldValue }) => (
 						<Form>
 							<DialogContent dividers>
 								<Field
@@ -187,7 +206,7 @@ const QueueModal = ({ open, onClose, queueId }) => {
 									open={colorPickerModalOpen}
 									handleClose={() => setColorPickerModalOpen(false)}
 									onChange={color => {
-										values.color = color;
+										setFieldValue("color", color);
 										setQueue(() => {
 											return { ...values, color };
 										});
@@ -213,6 +232,82 @@ const QueueModal = ({ open, onClose, queueId }) => {
 										margin="dense"
 									/>
 								</div>
+								<Divider style={{ margin: "16px 0" }} />
+								<FormControlLabel
+									control={
+										<Switch
+											checked={Boolean(values.aiEnabled)}
+											onChange={e => {
+												setFieldValue("aiEnabled", e.target.checked);
+												if (!e.target.checked) {
+													setFieldValue("aiAutoReply", false);
+												}
+											}}
+											color="primary"
+										/>
+									}
+									label="Assistente IA por fila"
+								/>
+
+								<Field
+									as={TextField}
+									select
+									fullWidth
+									label="Modo da IA"
+									name="aiMode"
+									value={values.aiMode || "triage"}
+									onChange={e => setFieldValue("aiMode", e.target.value)}
+									margin="dense"
+									variant="outlined"
+									disabled={!values.aiEnabled}
+									error={touched.aiMode && Boolean(errors.aiMode)}
+									helperText={touched.aiMode && errors.aiMode}
+								>
+									<MenuItem value="triage">Triagem</MenuItem>
+									<MenuItem value="initial_reply">Resposta inicial</MenuItem>
+										<MenuItem value="hybrid">Hibrido</MenuItem>
+								</Field>
+
+								<FormControlLabel
+									control={
+										<Switch
+											checked={Boolean(values.aiAutoReply)}
+											onChange={e =>
+												setFieldValue("aiAutoReply", e.target.checked)
+											}
+											color="primary"
+											disabled={!values.aiEnabled}
+										/>
+									}
+									label="Responder automaticamente"
+								/>
+
+								<Field
+									as={TextField}
+									fullWidth
+									label="Webhook n8n (opcional)"
+									name="aiWebhookUrl"
+									margin="dense"
+									variant="outlined"
+									disabled={!values.aiEnabled}
+									error={touched.aiWebhookUrl && Boolean(errors.aiWebhookUrl)}
+									helperText={touched.aiWebhookUrl && errors.aiWebhookUrl}
+								/>
+
+								<Field
+									as={TextField}
+									label="Prompt da IA"
+									type="aiPrompt"
+									multiline
+									rows={4}
+									fullWidth
+									name="aiPrompt"
+									error={touched.aiPrompt && Boolean(errors.aiPrompt)}
+									helperText={touched.aiPrompt && errors.aiPrompt}
+									variant="outlined"
+									margin="dense"
+									disabled={!values.aiEnabled}
+								/>
 							</DialogContent>
 							<DialogActions>
 								<Button

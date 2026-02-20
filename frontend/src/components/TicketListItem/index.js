@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useContext } from "react";
 
 import { useHistory, useParams } from "react-router-dom";
-import { parseISO, format, isSameDay } from "date-fns";
+import { parseISO, format } from "date-fns";
 import clsx from "clsx";
 
 import { makeStyles } from "@material-ui/core/styles";
@@ -63,6 +63,23 @@ const useStyles = makeStyles(theme => ({
 	lastMessageTime: {
 		justifySelf: "flex-end",
 	},
+	lastMessageDateTime: {
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-end",
+		marginLeft: 8,
+		minWidth: 76,
+	},
+	lastMessageDate: {
+		fontSize: 14,
+		lineHeight: 1.15,
+		color: "rgba(0, 0, 0, 0.67)",
+	},
+	lastMessageHour: {
+		fontSize: 11,
+		lineHeight: 1.1,
+		color: "rgba(0, 0, 0, 0.5)",
+	},
 
 	closedBadge: {
 		alignSelf: "center",
@@ -80,6 +97,20 @@ const useStyles = makeStyles(theme => ({
 		marginRight: 8,
 		marginLeft: "auto",
 	},
+  queueTag: {
+    alignSelf: "center",
+    marginRight: 8,
+    background: "#E9EDF5",
+    color: "#3F4D67",
+    border: "1px solid #D7DEEA",
+    padding: "1px 6px",
+    borderRadius: 10,
+    fontSize: 11,
+    maxWidth: 130,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap"
+  },
 
 	badgeStyle: {
 		color: "white",
@@ -100,20 +131,6 @@ const useStyles = makeStyles(theme => ({
 		left: "0%",
 	},
 
-	userTag: {
-		position: "absolute",
-		marginRight: 5,
-		right: 5,
-		bottom: 5,
-		background: "#2576D2",
-		color: "#ffffff",
-		border: "1px solid #CCC",
-		padding: 1,
-		paddingLeft: 5,
-		paddingRight: 5,
-		borderRadius: 10,
-		fontSize: "0.9em"
-	},
 }));
 
 const TicketListItem = ({ ticket }) => {
@@ -123,6 +140,12 @@ const TicketListItem = ({ ticket }) => {
 	const { ticketId } = useParams();
 	const isMounted = useRef(true);
 	const { user } = useContext(AuthContext);
+	const lastInteractionRaw = ticket.lastMessageAt || ticket.createdAt || ticket.updatedAt;
+	const lastInteractionDate =
+		typeof lastInteractionRaw === "string"
+			? parseISO(lastInteractionRaw)
+			: new Date(lastInteractionRaw);
+	const hasValidInteractionDate = !Number.isNaN(lastInteractionDate?.getTime?.());
 
 	useEffect(() => {
 		return () => {
@@ -204,15 +227,17 @@ const TicketListItem = ({ ticket }) => {
 									variant="body2"
 									color="textSecondary"
 								>
-									{isSameDay(parseISO(ticket.updatedAt), new Date()) ? (
-										<>{format(parseISO(ticket.updatedAt), "HH:mm")}</>
-									) : (
-										<>{format(parseISO(ticket.updatedAt), "dd/MM/yyyy")}</>
+									{hasValidInteractionDate && (
+										<span className={classes.lastMessageDateTime}>
+											<span className={classes.lastMessageDate}>
+												{format(lastInteractionDate, "dd/MM/yyyy")}
+											</span>
+											<span className={classes.lastMessageHour}>
+												{format(lastInteractionDate, "HH:mm")}
+											</span>
+										</span>
 									)}
 								</Typography>
-							)}
-							{ticket.whatsappId && (
-								<div className={classes.userTag} title={i18n.t("ticketsList.connectionTitle")}>{ticket.whatsapp?.name}</div>
 							)}
 						</span>
 					}
@@ -231,6 +256,9 @@ const TicketListItem = ({ ticket }) => {
 									<br />
 								)}
 							</Typography>
+              <div className={classes.queueTag} title={ticket.queue?.name || "A distribuir"}>
+                {ticket.queue?.name || "A distribuir"}
+              </div>
 
 							<Badge
 								className={classes.newMessagesCount}

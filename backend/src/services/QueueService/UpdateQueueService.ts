@@ -8,13 +8,24 @@ interface QueueData {
   name?: string;
   color?: string;
   greetingMessage?: string;
+  aiEnabled?: boolean;
+  aiMode?: string;
+  aiAutoReply?: boolean;
+  aiPrompt?: string;
+  aiWebhookUrl?: string;
 }
 
 const UpdateQueueService = async (
   queueId: number | string,
   queueData: QueueData
 ): Promise<Queue> => {
-  const { color, name } = queueData;
+  const normalizedQueueData = {
+    ...queueData,
+    aiWebhookUrl: queueData.aiWebhookUrl?.trim() || null,
+    aiPrompt: queueData.aiPrompt?.trim() || null
+  };
+
+  const { color, name, aiMode, aiWebhookUrl } = normalizedQueueData;
 
   const queueSchema = Yup.object().shape({
     name: Yup.string()
@@ -41,31 +52,32 @@ const UpdateQueueService = async (
           return colorTestRegex.test(value);
         }
         return true;
-      })
-      .test(
-        "Check-color-exists",
-        "ERR_QUEUE_COLOR_ALREADY_EXISTS",
-        async value => {
-          if (value) {
-            const queueWithSameColor = await Queue.findOne({
-              where: { color: value, id: { [Op.not]: queueId } }
-            });
-            return !queueWithSameColor;
-          }
-          return true;
+      }),
+    aiMode: Yup.string()
+      .nullable()
+      .notRequired()
+      .test("Check-ai-mode", "ERR_QUEUE_INVALID_AI_MODE", async value => {
+        if (value) {
+          return ["triage", "initial_reply", "hybrid"].includes(value);
         }
-      )
+        return true;
+      }),
+    aiWebhookUrl: Yup.string()
+      .trim()
+      .url("ERR_QUEUE_INVALID_AI_WEBHOOK_URL")
+      .nullable()
+      .notRequired()
   });
 
   try {
-    await queueSchema.validate({ color, name });
+    await queueSchema.validate({ color, name, aiMode, aiWebhookUrl });
   } catch (err) {
     throw new AppError(err.message);
   }
 
   const queue = await ShowQueueService(queueId);
 
-  await queue.update(queueData);
+  await queue.update(normalizedQueueData);
 
   return queue;
 };

@@ -5,10 +5,14 @@ import { getIO } from "../libs/socket";
 import Message from "../models/Message";
 
 import ListMessagesService from "../services/MessageServices/ListMessagesService";
+import CreateMessageService from "../services/MessageServices/CreateMessageService";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import DeleteWhatsAppMessage from "../services/WbotServices/DeleteWhatsAppMessage";
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
+import LogTicketEventService from "../services/TicketServices/LogTicketEventService";
+import SendChannelMessageService from "../services/ChannelServices/SendChannelMessageService";
+import AppError from "../errors/AppError";
 
 type IndexQuery = {
   pageNumber: string;
@@ -41,17 +45,52 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const medias = req.files as Express.Multer.File[];
 
   const ticket = await ShowTicketService(ticketId);
+  const isWhatsAppChannel = !ticket.channel || ticket.channel === "whatsapp";
 
   SetTicketMessagesAsRead(ticket);
 
-  if (medias) {
+  if (medias && medias.length > 0) {
+    if (!isWhatsAppChannel) {
+      throw new AppError("ERR_CHANNEL_MEDIA_NOT_SUPPORTED", 400);
+    }
+
     await Promise.all(
       medias.map(async (media: Express.Multer.File) => {
         await SendWhatsAppMedia({ media, ticket });
       })
     );
   } else {
-    await SendWhatsAppMessage({ body, ticket, quotedMsg });
+    const sentMessage = isWhatsAppChannel
+      ? await SendWhatsAppMessage({ body, ticket, quotedMsg })
+      : await SendChannelMessageService({ body, ticket, quotedMsg });
+
+    await CreateMessageService({
+      messageData: {
+        id: sentMessage.id,
+        ticketId: ticket.id,
+        contactId: ticket.contactId,
+        body: sentMessage.body || body,
+        fromMe: true,
+        read: true,
+        mediaType: sentMessage.type,
+        quotedMsgId: quotedMsg?.id,
+        ack: sentMessage.ack !== undefined ? sentMessage.ack : 0
+      }
+    });
+  }
+
+  if (!ticket.firstHumanResponseAt) {
+    await ticket.update({ firstHumanResponseAt: new Date(), slaDueAt: null });
+
+    await LogTicketEventService({
+      ticketId: ticket.id,
+      queueId: ticket.queueId,
+      userId: ticket.userId,
+      eventType: "human_first_response",
+      source: "agent"
+    });
+  } else if (ticket.slaDueAt) {
+    await ticket.update({ slaDueAt: null });
   }
 
   return res.send();

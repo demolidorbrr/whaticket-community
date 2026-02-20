@@ -7,7 +7,9 @@
 
 # WhaTicket!
 
-**NOTE**: The new version of whatsapp-web.js required Node 14. Upgrade your installations to keep using it.
+**NOTE**: Current `whatsapp-web.js` requires Node.js 18+. This repository is configured for Node.js 20.
+
+**UPDATED GUIDE**: For an updated local + VPS (Hostinger) deployment flow, follow `docs/IMPLEMENTACAO_LOCAL_VPS.md`.
 
 A _very simple_ Ticket System based on WhatsApp messages.
 
@@ -113,7 +115,7 @@ Open a second terminal, go to frontend folder and create .env file:
 
 ```bash
 nano .env
-REACT_APP_BACKEND_URL = http://localhost:8080/ # Your previous configured backend app URL.
+VITE_BACKEND_URL = http://localhost:8080/ # Your previous configured backend app URL.
 ```
 
 Start frontend app:
@@ -156,7 +158,7 @@ sudo apt update && sudo apt upgrade
 Install node, and confirm node command is available:
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_14.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 node -v
 npm -v
@@ -268,7 +270,7 @@ npm install
 Create frontend .env file and fill it ONLY with your backend address, it should look like this:
 
 ```bash
-REACT_APP_BACKEND_URL = https://api.mydomain.com/
+VITE_BACKEND_URL = https://api.mydomain.com/
 ```
 
 Build frontend app:

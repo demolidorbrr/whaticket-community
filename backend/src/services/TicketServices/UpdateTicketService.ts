@@ -5,17 +5,21 @@ import Ticket from "../../models/Ticket";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import ShowTicketService from "./ShowTicketService";
+import LogTicketEventService from "./LogTicketEventService";
 
 interface TicketData {
   status?: string;
   userId?: number;
   queueId?: number;
   whatsappId?: number;
+  leadScore?: number;
+  tagIds?: number[];
 }
 
 interface Request {
   ticketData: TicketData;
   ticketId: string | number;
+  source?: string;
 }
 
 interface Response {
@@ -26,9 +30,10 @@ interface Response {
 
 const UpdateTicketService = async ({
   ticketData,
-  ticketId
+  ticketId,
+  source = "manual"
 }: Request): Promise<Response> => {
-  const { status, userId, queueId, whatsappId } = ticketData;
+  const { status, userId, queueId, whatsappId, leadScore, tagIds } = ticketData;
 
   const ticket = await ShowTicketService(ticketId);
   await SetTicketMessagesAsRead(ticket);
@@ -39,6 +44,7 @@ const UpdateTicketService = async ({
 
   const oldStatus = ticket.status;
   const oldUserId = ticket.user?.id;
+  const oldQueueId = ticket.queueId;
 
   if (oldStatus === "closed") {
     await CheckContactOpenTickets(ticket.contact.id, ticket.whatsappId);
@@ -47,7 +53,8 @@ const UpdateTicketService = async ({
   await ticket.update({
     status,
     queueId,
-    userId
+    userId,
+    leadScore
   });
 
   if (whatsappId) {
@@ -56,26 +63,72 @@ const UpdateTicketService = async ({
     });
   }
 
-  await ticket.reload();
+  if (Array.isArray(tagIds)) {
+    await ticket.$set("tags", tagIds);
+  }
 
-  const io = getIO();
+  if (status === "closed" && !ticket.resolvedAt) {
+    await ticket.update({ resolvedAt: new Date() });
+  }
 
-  if (ticket.status !== oldStatus || ticket.user?.id !== oldUserId) {
-    io.to(oldStatus).emit("ticket", {
-      action: "delete",
-      ticketId: ticket.id
+  // Reload the ticket with all relations so socket consumers receive
+  // an up-to-date payload (user/queue/contact/tags/etc).
+  const updatedTicket = await ShowTicketService(ticketId);
+
+  if (status && oldStatus !== updatedTicket.status) {
+    await LogTicketEventService({
+      ticketId: updatedTicket.id,
+      queueId: updatedTicket.queueId || oldQueueId,
+      userId: updatedTicket.userId || oldUserId,
+      eventType: "ticket_status_changed",
+      source,
+      payload: { oldStatus, newStatus: updatedTicket.status }
     });
   }
 
-  io.to(ticket.status)
+  if (queueId !== undefined && oldQueueId !== updatedTicket.queueId) {
+    await LogTicketEventService({
+      ticketId: updatedTicket.id,
+      queueId: updatedTicket.queueId,
+      userId: updatedTicket.userId,
+      eventType: "ticket_queue_changed",
+      source,
+      payload: { oldQueueId, newQueueId: updatedTicket.queueId }
+    });
+  }
+
+  if (userId !== undefined && oldUserId !== updatedTicket.userId) {
+    await LogTicketEventService({
+      ticketId: updatedTicket.id,
+      queueId: updatedTicket.queueId,
+      userId: updatedTicket.userId,
+      eventType: "ticket_user_changed",
+      source,
+      payload: { oldUserId, newUserId: updatedTicket.userId }
+    });
+  }
+
+  const io = getIO();
+
+  if (
+    updatedTicket.status !== oldStatus ||
+    updatedTicket.user?.id !== oldUserId
+  ) {
+    io.to(oldStatus).emit("ticket", {
+      action: "delete",
+      ticketId: updatedTicket.id
+    });
+  }
+
+  io.to(updatedTicket.status)
     .to("notification")
     .to(ticketId.toString())
     .emit("ticket", {
       action: "update",
-      ticket
+      ticket: updatedTicket
     });
 
-  return { ticket, oldStatus, oldUserId };
+  return { ticket: updatedTicket, oldStatus, oldUserId };
 };
 
 export default UpdateTicketService;

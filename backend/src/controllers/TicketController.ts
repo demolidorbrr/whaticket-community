@@ -25,6 +25,9 @@ interface TicketData {
   status: string;
   queueId: number;
   userId: number;
+  leadScore?: number;
+  tagIds?: number[];
+  source?: string;
 }
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
@@ -91,7 +94,8 @@ export const update = async (
 
   const { ticket } = await UpdateTicketService({
     ticketData,
-    ticketId
+    ticketId,
+    source: ticketData.source || "manual"
   });
 
   if (ticket.status === "closed") {

@@ -8,7 +8,9 @@ import {
   AutoIncrement,
   AllowNull,
   Unique,
-  BelongsToMany
+  BelongsToMany,
+  Default,
+  DataType
 } from "sequelize-typescript";
 import User from "./User";
 import UserQueue from "./UserQueue";
@@ -35,6 +37,24 @@ class Queue extends Model<Queue> {
 
   @Column
   greetingMessage: string;
+
+  @Default(false)
+  @Column
+  aiEnabled: boolean;
+
+  @Default("triage")
+  @Column
+  aiMode: string;
+
+  @Default(false)
+  @Column
+  aiAutoReply: boolean;
+
+  @Column(DataType.TEXT)
+  aiPrompt: string;
+
+  @Column
+  aiWebhookUrl: string;
 
   @CreatedAt
   createdAt: Date;

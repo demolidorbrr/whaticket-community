@@ -41,12 +41,17 @@ const Settings = () => {
 	const classes = useStyles();
 
 	const [settings, setSettings] = useState([]);
+	const [queues, setQueues] = useState([]);
 
 	useEffect(() => {
 		const fetchSession = async () => {
 			try {
-				const { data } = await api.get("/settings");
-				setSettings(data);
+				const [{ data: settingsData }, { data: queuesData }] = await Promise.all([
+					api.get("/settings"),
+					api.get("/queue"),
+				]);
+				setSettings(settingsData);
+				setQueues(queuesData);
 			} catch (err) {
 				toastError(err);
 			}
@@ -88,8 +93,8 @@ const Settings = () => {
 	};
 
 	const getSettingValue = key => {
-		const { value } = settings.find(s => s.key === key);
-		return value;
+		const setting = settings.find(s => s.key === key);
+		return setting ? setting.value : "";
 	};
 
 	return (
@@ -134,6 +139,75 @@ const Settings = () => {
 						fullWidth
 						value={settings && settings.length > 0 && getSettingValue("userApiToken")}
 					/>
+				</Paper>
+
+				<Paper className={classes.paper}>
+					<Typography variant="body1">
+						SLA - Escalonamento ativo
+					</Typography>
+					<Select
+						margin="dense"
+						variant="outlined"
+						native
+						id="slaEscalationEnabled-setting"
+						name="slaEscalationEnabled"
+						value={
+							settings && settings.length > 0
+								? getSettingValue("slaEscalationEnabled")
+								: "disabled"
+						}
+						className={classes.settingOption}
+						onChange={handleChangeSetting}
+					>
+						<option value="enabled">Ativado</option>
+						<option value="disabled">Desativado</option>
+					</Select>
+				</Paper>
+
+				<Paper className={classes.paper}>
+					<TextField
+						key={`slaReplyMinutes-${getSettingValue("slaReplyMinutes") || "30"}`}
+						id="slaReplyMinutes-setting"
+						label="SLA - Minutos para primeira resposta"
+						margin="dense"
+						variant="outlined"
+						type="number"
+						name="slaReplyMinutes"
+						defaultValue={
+							settings && settings.length > 0
+								? getSettingValue("slaReplyMinutes")
+								: "30"
+						}
+						onBlur={handleChangeSetting}
+						className={classes.settingOption}
+					/>
+				</Paper>
+
+				<Paper className={classes.paper}>
+					<Typography variant="body1">
+						SLA - Fila de escalonamento
+					</Typography>
+					<Select
+						margin="dense"
+						variant="outlined"
+						native
+						id="slaEscalationQueueId-setting"
+						name="slaEscalationQueueId"
+						value={
+							settings && settings.length > 0
+								? getSettingValue("slaEscalationQueueId")
+								: ""
+						}
+						className={classes.settingOption}
+						onChange={handleChangeSetting}
+					>
+						<option value="">Manter fila atual</option>
+						{queues.map(queue => (
+							<option key={queue.id} value={queue.id}>
+								{queue.name}
+							</option>
+						))}
+					</Select>
 				</Paper>
 
 			</Container>

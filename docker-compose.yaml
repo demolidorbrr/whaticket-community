@@ -1,5 +1,3 @@
-version: '3'
-
 networks:
   whaticket:
 
@@ -14,14 +12,22 @@ services:
       - DB_USER=root
       - DB_PASS=${MYSQL_ROOT_PASSWORD:-strongpassword}
       - DB_NAME=${MYSQL_DATABASE:-whaticket}
+      - WHATSAPP_PROVIDER=${WHATSAPP_PROVIDER:-wwebjs}
       - JWT_SECRET=${JWT_SECRET:-3123123213123}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-75756756756}
       - BACKEND_URL=${BACKEND_URL:-http://localhost}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - PROXY_PORT=${PROXY_PORT:-8080}
-      - CHROME_ARGS=--no-sandbox --disable-setuid-sandbox
+      - CHROME_BIN=${CHROME_BIN:-/usr/bin/google-chrome-stable}
+      - CHROME_WS=${CHROME_WS:-}
+      - CHROME_ARGS=${CHROME_ARGS:---no-sandbox --disable-setuid-sandbox}
+      - PROXY_ADDRESS=${PROXY_ADDRESS:-}
+      - PROXY_AUTH=${PROXY_AUTH:-}
+      - REDIS_URL=${REDIS_URL:-}
+      - REDIS_DB=${REDIS_DB:-0}
     ports:
       - ${BACKEND_PORT:-8080}:3000
+    restart: unless-stopped
     volumes:
       - ./backend/public/:/usr/src/app/public/
       - ./backend/.wwebjs_auth/:/usr/src/app/.wwebjs_auth/
@@ -37,9 +43,10 @@ services:
       dockerfile: ./Dockerfile
     environment:
       - URL_BACKEND=backend:3000
-      - REACT_APP_BACKEND_URL=${BACKEND_URL:-http://localhost}:${PROXY_PORT:-8080}/
+      - VITE_BACKEND_URL=${BACKEND_URL:-http://localhost}:${PROXY_PORT:-8080}/
       - FRONTEND_SERVER_NAME=${FRONTEND_SERVER_NAME}
       - BACKEND_SERVER_NAME=${BACKEND_SERVER_NAME}
+    restart: unless-stopped
     volumes:
       - ./ssl/certs/:/etc/nginx/ssl/
       - ./ssl/www/:/var/www/letsencrypt/

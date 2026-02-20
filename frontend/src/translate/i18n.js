@@ -6,7 +6,14 @@ import { messages } from "./languages";
 i18n.use(LanguageDetector).init({
 	debug: false,
 	defaultNS: ["translations"],
-	fallbackLng: "en",
+	lng: "pt",
+	fallbackLng: "pt",
+	supportedLngs: ["pt", "en", "es"],
+	load: "languageOnly",
+	detection: {
+		order: ["localStorage", "navigator"],
+		caches: ["localStorage"],
+	},
 	ns: ["translations"],
 	resources: messages,
 });

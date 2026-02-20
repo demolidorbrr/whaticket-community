@@ -18,6 +18,8 @@ import FindOrCreateTicketService from "../services/TicketServices/FindOrCreateTi
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import CreateContactService from "../services/ContactServices/CreateContactService";
+import ProcessQueueAssistantService from "../services/AIServices/ProcessQueueAssistantService";
+import StartTicketSLAService from "../services/SLAServices/StartTicketSLAService";
 
 import { whatsappProvider } from "../providers/WhatsApp/whatsappProvider";
 import { MessageType, MessageAck } from "../providers/WhatsApp/types";
@@ -144,6 +146,18 @@ const processVcardMessage = async (
   }
 };
 
+const resolveQuotedMessageId = async (
+  quotedMsgId?: string
+): Promise<string | undefined> => {
+  if (!quotedMsgId) return undefined;
+
+  const quotedMessage = await Message.findByPk(quotedMsgId, {
+    attributes: ["id"]
+  });
+
+  return quotedMessage ? quotedMsgId : undefined;
+};
+
 const handleQueueLogic = async (
   whatsappId: number,
   messageBody: string,
@@ -222,6 +236,41 @@ export const handleMessage = async (
 ): Promise<void> => {
   try {
     const processedMessage = processLocationMessage(messagePayload);
+    const resolvedQuotedMsgId = await resolveQuotedMessageId(
+      processedMessage.quotedMsgId
+    );
+
+    if (processedMessage.fromMe) {
+      const existingOutgoingMessage = await Message.findByPk(processedMessage.id);
+
+      if (existingOutgoingMessage) {
+        const messageData: any = {
+          id: processedMessage.id,
+          ticketId: existingOutgoingMessage.ticketId,
+          contactId: existingOutgoingMessage.contactId,
+          body: processedMessage.body,
+          fromMe: true,
+          read: true,
+          mediaType: processedMessage.type,
+          quotedMsgId: resolvedQuotedMsgId,
+          ack:
+            processedMessage.ack !== undefined
+              ? processedMessage.ack
+              : existingOutgoingMessage.ack
+        };
+
+        if (mediaPayload && processedMessage.hasMedia) {
+          const filename = await saveMediaFile(mediaPayload);
+          messageData.mediaUrl = filename;
+          messageData.body = processedMessage.body || filename;
+          const [mediaType] = mediaPayload.mimetype.split("/");
+          messageData.mediaType = mediaType;
+        }
+
+        await CreateMessageService({ messageData });
+        return;
+      }
+    }
 
     const contact = await CreateOrUpdateContactService({
       name: contactPayload.name,
@@ -258,6 +307,10 @@ export const handleMessage = async (
       groupContact
     );
 
+    if (!processedMessage.fromMe) {
+      await StartTicketSLAService(ticket, "system");
+    }
+
     const messageData: any = {
       id: processedMessage.id,
       ticketId: ticket.id,
@@ -266,7 +319,7 @@ export const handleMessage = async (
       fromMe: processedMessage.fromMe,
       read: processedMessage.fromMe,
       mediaType: processedMessage.type,
-      quotedMsgId: processedMessage.quotedMsgId,
+      quotedMsgId: resolvedQuotedMsgId,
       ack: processedMessage.ack !== undefined ? processedMessage.ack : 0
     };
 
@@ -292,6 +345,15 @@ export const handleMessage = async (
     await CreateMessageService({ messageData });
 
     await processVcardMessage(processedMessage);
+
+    if (!processedMessage.fromMe) {
+      await ProcessQueueAssistantService({
+        ticket,
+        messagePayload: processedMessage,
+        contactPayload,
+        whatsappId: contextPayload.whatsappId
+      });
+    }
 
     if (
       !ticket.queue &&

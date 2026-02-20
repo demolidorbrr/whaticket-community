@@ -38,18 +38,19 @@ const Chart = () => {
 	]);
 
 	useEffect(() => {
-		setChartData(prevState => {
-			let aux = [...prevState];
+		setChartData(prevState =>
+			prevState.map(item => {
+				const amount = tickets.filter(
+					ticket =>
+						format(startOfHour(parseISO(ticket.createdAt)), "HH:mm") === item.time
+				).length;
 
-			aux.forEach(a => {
-				tickets.forEach(ticket => {
-					format(startOfHour(parseISO(ticket.createdAt)), "HH:mm") === a.time &&
-						a.amount++;
-				});
-			});
-
-			return aux;
-		});
+				return {
+					...item,
+					amount
+				};
+			})
+		);
 	}, [tickets]);
 
 	return (
@@ -82,7 +83,7 @@ const Chart = () => {
 							position="left"
 							style={{ textAnchor: "middle", fill: theme.palette.text.primary }}
 						>
-							Tickets
+							Atendimentos
 						</Label>
 					</YAxis>
 					<Bar dataKey="amount" fill={theme.palette.primary.main} />

@@ -18,6 +18,9 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import { Can } from "../Can";
 import TicketsQueueSelect from "../TicketsQueueSelect";
 import { Button } from "@material-ui/core";
+import api from "../../services/api";
+import openSocket from "../../services/socket-io";
+import toastError from "../../errors/toastError";
 
 const useStyles = makeStyles((theme) => ({
   ticketsWrapper: {
@@ -94,14 +97,63 @@ const TicketsManager = () => {
   const { user } = useContext(AuthContext);
   const [openCount, setOpenCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
+  const [groupsCount, setGroupsCount] = useState(0);
+  const isAdmin = user.profile?.toUpperCase() === "ADMIN";
   const userQueueIds = user.queues.map((q) => q.id);
-  const [selectedQueueIds, setSelectedQueueIds] = useState(userQueueIds || []);
+  const [availableQueues, setAvailableQueues] = useState(user?.queues || []);
+  const [selectedQueueIds, setSelectedQueueIds] = useState(
+    isAdmin ? [] : userQueueIds || []
+  );
 
   useEffect(() => {
-    if (user.profile.toUpperCase() === "ADMIN") {
+    if (isAdmin) {
       setShowAllTickets(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setAvailableQueues(user?.queues || []);
+      return;
+    }
+
+    const loadQueues = async () => {
+      try {
+        const { data } = await api.get("/queue");
+        setAvailableQueues(data || []);
+      } catch (err) {
+        toastError(err);
+      }
+    };
+
+    loadQueues();
+  }, [isAdmin, user?.queues]);
+
+  useEffect(() => {
+    const socket = openSocket();
+
+    socket.on("queue", data => {
+      if (data.action === "delete") {
+        setAvailableQueues(prev => prev.filter(queue => queue.id !== data.queueId));
+        setSelectedQueueIds(prev => prev.filter(id => id !== data.queueId));
+        return;
+      }
+
+      if (data.action === "update" || data.action === "create") {
+        setAvailableQueues(prev => {
+          const queueIndex = prev.findIndex(queue => queue.id === data.queue.id);
+          if (queueIndex >= 0) {
+            const next = [...prev];
+            next[queueIndex] = data.queue;
+            return next;
+          }
+          return [data.queue, ...prev];
+        });
+      }
+    });
+
+    return () => socket.disconnect();
   }, []);
 
   useEffect(() => {
@@ -225,7 +277,7 @@ const TicketsManager = () => {
         <TicketsQueueSelect
           style={{ marginLeft: 6 }}
           selectedQueueIds={selectedQueueIds}
-          userQueues={user?.queues}
+          userQueues={availableQueues}
           onChange={(values) => setSelectedQueueIds(values)}
         />
       </Paper>
@@ -261,20 +313,42 @@ const TicketsManager = () => {
             }
             value={"pending"}
           />
+          <Tab
+            label={
+              <Badge
+                className={classes.badge}
+                badgeContent={groupsCount}
+                color="default"
+              >
+                GRUPOS
+              </Badge>
+            }
+            value={"group"}
+          />
         </Tabs>
         <Paper className={classes.ticketsWrapper}>
           <TicketsList
             status="open"
             showAll={showAllTickets}
             selectedQueueIds={selectedQueueIds}
+            groupMode="exclude"
             updateCount={(val) => setOpenCount(val)}
             style={applyPanelStyle("open")}
           />
           <TicketsList
             status="pending"
             selectedQueueIds={selectedQueueIds}
+            groupMode="exclude"
             updateCount={(val) => setPendingCount(val)}
             style={applyPanelStyle("pending")}
+          />
+          <TicketsList
+            status="group"
+            showAll={showAllTickets}
+            selectedQueueIds={selectedQueueIds}
+            groupMode="only"
+            updateCount={(val) => setGroupsCount(val)}
+            style={applyPanelStyle("group")}
           />
         </Paper>
       </TabPanel>

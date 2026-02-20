@@ -13,9 +13,7 @@ import { makeStyles } from "@material-ui/core";
 import DialogActions from "@material-ui/core/DialogActions";
 import DialogContent from "@material-ui/core/DialogContent";
 import DialogTitle from "@material-ui/core/DialogTitle";
-import Autocomplete, {
-	createFilterOptions,
-} from "@material-ui/lab/Autocomplete";
+import Autocomplete from "@material-ui/lab/Autocomplete";
 import CircularProgress from "@material-ui/core/CircularProgress";
 
 import { i18n } from "../../translate/i18n";
@@ -33,17 +31,12 @@ const useStyles = makeStyles((theme) => ({
   },
 }));
 
-const filterOptions = createFilterOptions({
-	trim: true,
-});
-
 const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId }) => {
 	const history = useHistory();
 	const [options, setOptions] = useState([]);
 	const [queues, setQueues] = useState([]);
 	const [allQueues, setAllQueues] = useState([]);
 	const [loading, setLoading] = useState(false);
-	const [searchParam, setSearchParam] = useState("");
 	const [selectedUser, setSelectedUser] = useState(null);
 	const [selectedQueue, setSelectedQueue] = useState('');
 	const [selectedWhatsapp, setSelectedWhatsapp] = useState(ticketWhatsappId);
@@ -64,34 +57,52 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 	}, []);
 
 	useEffect(() => {
-		if (!modalOpen || searchParam.length < 3) {
-			setLoading(false);
+		if (!modalOpen) {
 			return;
 		}
-		setLoading(true);
-		const delayDebounceFn = setTimeout(() => {
-			const fetchUsers = async () => {
-				try {
-					const { data } = await api.get("/users/", {
-						params: { searchParam },
-					});
-					setOptions(data.users);
-					setLoading(false);
-				} catch (err) {
-					setLoading(false);
-					toastError(err);
-				}
-			};
 
-			fetchUsers();
-		}, 500);
-		return () => clearTimeout(delayDebounceFn);
-	}, [searchParam, modalOpen]);
+		const fetchAllUsers = async () => {
+			setLoading(true);
+			try {
+				let pageNumber = 1;
+				let hasMore = true;
+				const users = [];
+
+				while (hasMore) {
+					const { data } = await api.get("/users/", {
+						params: { pageNumber },
+					});
+
+					users.push(...(data.users || []));
+					hasMore = data.hasMore;
+					pageNumber += 1;
+				}
+
+				setOptions(
+					users.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+				);
+			} catch (err) {
+				toastError(err);
+			} finally {
+				setLoading(false);
+			}
+		};
+
+		fetchAllUsers();
+	}, [modalOpen]);
+
+	useEffect(() => {
+		if (modalOpen) {
+			setSelectedWhatsapp(ticketWhatsappId);
+		}
+	}, [modalOpen, ticketWhatsappId]);
 
 	const handleClose = () => {
 		onClose();
-		setSearchParam("");
 		setSelectedUser(null);
+		setSelectedQueue("");
+		setQueues(allQueues);
+		setSelectedWhatsapp(ticketWhatsappId);
 	};
 
 	const handleSaveTicket = async e => {
@@ -137,7 +148,9 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 				<DialogContent dividers>
 					<Autocomplete
 						style={{ width: 300, marginBottom: 20 }}
+						value={selectedUser}
 						getOptionLabel={option => `${option.name}`}
+						getOptionSelected={(option, value) => option.id === value.id}
 						onChange={(e, newValue) => {
 							setSelectedUser(newValue);
 							if (newValue != null && Array.isArray(newValue.queues)) {
@@ -148,8 +161,6 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 							}
 						}}
 						options={options}
-						filterOptions={filterOptions}
-						freeSolo
 						autoHighlight
 						noOptionsText={i18n.t("transferTicketModal.noOptions")}
 						loading={loading}
@@ -158,9 +169,7 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 								{...params}
 								label={i18n.t("transferTicketModal.fieldLabel")}
 								variant="outlined"
-								required
 								autoFocus
-								onChange={e => setSearchParam(e.target.value)}
 								InputProps={{
 									...params.InputProps,
 									endAdornment: (

@@ -203,6 +203,7 @@ const Queues = () => {
               <TableCell align="center">
                 {i18n.t("queues.table.greeting")}
               </TableCell>
+              <TableCell align="center">IA</TableCell>
               <TableCell align="center">
                 {i18n.t("queues.table.actions")}
               </TableCell>
@@ -237,6 +238,9 @@ const Queues = () => {
                     </div>
                   </TableCell>
                   <TableCell align="center">
+                    {queue.aiEnabled ? "Ativa" : "Desativada"}
+                  </TableCell>
+                  <TableCell align="center">
                     <IconButton
                       size="small"
                       onClick={() => handleEditQueue(queue)}
@@ -256,7 +260,7 @@ const Queues = () => {
                   </TableCell>
                 </TableRow>
               ))}
-              {loading && <TableRowSkeleton columns={4} />}
+              {loading && <TableRowSkeleton columns={5} />}
             </>
           </TableBody>
         </Table>

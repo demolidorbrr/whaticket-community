@@ -1,4 +1,4 @@
-import { Op, fn, where, col, Filterable, Includeable } from "sequelize";
+import { Op, fn, where, col, Filterable, Includeable, literal } from "sequelize";
 import { startOfDay, endOfDay, parseISO } from "date-fns";
 
 import Ticket from "../../models/Ticket";
@@ -7,6 +7,8 @@ import Message from "../../models/Message";
 import Queue from "../../models/Queue";
 import ShowUserService from "../UserServices/ShowUserService";
 import Whatsapp from "../../models/Whatsapp";
+import Tag from "../../models/Tag";
+import User from "../../models/User";
 
 interface Request {
   searchParam?: string;
@@ -35,10 +37,32 @@ const ListTicketsService = async ({
   userId,
   withUnreadMessages
 }: Request): Promise<Response> => {
-  let whereCondition: Filterable["where"] = {
-    [Op.or]: [{ userId }, { status: "pending" }],
-    queueId: { [Op.or]: [queueIds, null] }
-  };
+  const user = await ShowUserService(userId);
+  const userQueueIds = user.queues.map(queue => queue.id);
+
+  const normalizedQueueIds =
+    showAll === "true"
+      ? Array.isArray(queueIds) && queueIds.length > 0
+        ? queueIds
+        : []
+      : Array.isArray(queueIds) && queueIds.length > 0
+        ? queueIds
+        : userQueueIds;
+
+  let whereCondition: Filterable["where"] =
+    showAll === "true" ? {} : { [Op.or]: [{ userId }, { status: "pending" }] };
+
+  if (normalizedQueueIds.length > 0) {
+    whereCondition = {
+      ...whereCondition,
+      queueId: { [Op.or]: [normalizedQueueIds, null] }
+    };
+  } else if (showAll !== "true") {
+    whereCondition = {
+      ...whereCondition,
+      queueId: null
+    };
+  }
   let includeCondition: Includeable[];
 
   includeCondition = [
@@ -53,17 +77,30 @@ const ListTicketsService = async ({
       attributes: ["id", "name", "color"]
     },
     {
+      model: User,
+      as: "user",
+      attributes: ["id", "name"]
+    },
+    {
       model: Whatsapp,
       as: "whatsapp",
       attributes: ["name"]
+    },
+    {
+      model: Tag,
+      as: "tags",
+      attributes: ["id", "name", "color"],
+      through: { attributes: [] }
     }
   ];
 
-  if (showAll === "true") {
-    whereCondition = { queueId: { [Op.or]: [queueIds, null] } };
-  }
-
-  if (status) {
+  if (status === "group") {
+    whereCondition = {
+      ...whereCondition,
+      status: { [Op.in]: ["open", "pending"] },
+      isGroup: true
+    };
+  } else if (status) {
     whereCondition = {
       ...whereCondition,
       status
@@ -122,12 +159,14 @@ const ListTicketsService = async ({
   }
 
   if (withUnreadMessages === "true") {
-    const user = await ShowUserService(userId);
-    const userQueueIds = user.queues.map(queue => queue.id);
+    const unreadQueueFilter =
+      userQueueIds.length > 0
+        ? { queueId: { [Op.or]: [userQueueIds, null] } }
+        : { queueId: null };
 
     whereCondition = {
       [Op.or]: [{ userId }, { status: "pending" }],
-      queueId: { [Op.or]: [userQueueIds, null] },
+      ...unreadQueueFilter,
       unreadMessages: { [Op.gt]: 0 }
     };
   }
@@ -137,6 +176,16 @@ const ListTicketsService = async ({
 
   const { count, rows: tickets } = await Ticket.findAndCountAll({
     where: whereCondition,
+    attributes: {
+      include: [
+        [
+          literal(
+            "(SELECT MAX(`createdAt`) FROM `Messages` WHERE `Messages`.`ticketId` = `Ticket`.`id`)"
+          ),
+          "lastMessageAt"
+        ]
+      ]
+    },
     include: includeCondition,
     distinct: true,
     limit,

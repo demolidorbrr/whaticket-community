@@ -13,6 +13,7 @@ interface Request {
   number: string;
   lid?: string;
   isGroup: boolean;
+  keepNumberFormat?: boolean;
   email?: string;
   profilePicUrl?: string;
   extraInfo?: ExtraInfo[];
@@ -30,10 +31,14 @@ const CreateOrUpdateContactService = async ({
   lid,
   profilePicUrl,
   isGroup,
+  keepNumberFormat = false,
   email = "",
   extraInfo = []
 }: Request): Promise<Contact> => {
-  const number = isGroup ? rawNumber : rawNumber.replace(/[^0-9]/g, "");
+  const number =
+    isGroup || keepNumberFormat
+      ? rawNumber
+      : rawNumber.replace(/[^0-9]/g, "");
   if (!number && !lid) throw new Error("Either number or lid must be provided");
 
   const [contactByNumber, contactByLid] = await Promise.all([

@@ -281,7 +281,7 @@ const messages = {
         listItems: {
           dashboard: "Dashboard",
           connections: "Connections",
-          tickets: "Tickets",
+          tickets: "Attendances",
           contacts: "Contacts",
           quickAnswers: "Quick Answers",
           queues: "Queues",

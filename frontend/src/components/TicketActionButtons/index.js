@@ -4,6 +4,7 @@ import { useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
 import { IconButton } from "@material-ui/core";
 import { MoreVert, Replay } from "@material-ui/icons";
+import LocalOfferIcon from "@material-ui/icons/LocalOffer";
 
 import { i18n } from "../../translate/i18n";
 import api from "../../services/api";
@@ -11,6 +12,7 @@ import TicketOptionsMenu from "../TicketOptionsMenu";
 import ButtonWithSpinner from "../ButtonWithSpinner";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import TicketAutomationModal from "../TicketAutomationModal";
 
 const useStyles = makeStyles(theme => ({
 	actionButtons: {
@@ -29,6 +31,7 @@ const TicketActionButtons = ({ ticket }) => {
 	const history = useHistory();
 	const [anchorEl, setAnchorEl] = useState(null);
 	const [loading, setLoading] = useState(false);
+	const [automationModalOpen, setAutomationModalOpen] = useState(false);
 	const ticketOptionsMenuOpen = Boolean(anchorEl);
 	const { user } = useContext(AuthContext);
 
@@ -62,6 +65,11 @@ const TicketActionButtons = ({ ticket }) => {
 
 	return (
 		<div className={classes.actionButtons}>
+			<TicketAutomationModal
+				open={automationModalOpen}
+				onClose={() => setAutomationModalOpen(false)}
+				ticket={ticket}
+			/>
 			{ticket.status === "closed" && (
 				<ButtonWithSpinner
 					loading={loading}
@@ -74,6 +82,9 @@ const TicketActionButtons = ({ ticket }) => {
 			)}
 			{ticket.status === "open" && (
 				<>
+					<IconButton onClick={() => setAutomationModalOpen(true)} title="Tags e Score">
+						<LocalOfferIcon />
+					</IconButton>
 					<ButtonWithSpinner
 						loading={loading}
 						startIcon={<Replay />}
@@ -103,15 +114,20 @@ const TicketActionButtons = ({ ticket }) => {
 				</>
 			)}
 			{ticket.status === "pending" && (
-				<ButtonWithSpinner
-					loading={loading}
-					size="small"
-					variant="contained"
-					color="primary"
-					onClick={e => handleUpdateTicketStatus(e, "open", user?.id)}
-				>
-					{i18n.t("messagesList.header.buttons.accept")}
-				</ButtonWithSpinner>
+				<>
+					<IconButton onClick={() => setAutomationModalOpen(true)} title="Tags e Score">
+						<LocalOfferIcon />
+					</IconButton>
+					<ButtonWithSpinner
+						loading={loading}
+						size="small"
+						variant="contained"
+						color="primary"
+						onClick={e => handleUpdateTicketStatus(e, "open", user?.id)}
+					>
+						{i18n.t("messagesList.header.buttons.accept")}
+					</ButtonWithSpinner>
+				</>
 			)}
 		</div>
 	);

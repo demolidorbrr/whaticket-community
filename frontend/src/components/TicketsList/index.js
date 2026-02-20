@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useReducer, useContext } from "react";
+import React, { useState, useEffect, useReducer, useContext, useMemo } from "react";
 import openSocket from "../../services/socket-io";
 
 import { makeStyles } from "@material-ui/core/styles";
@@ -69,6 +69,15 @@ const useStyles = makeStyles(theme => ({
 		alignItems: "center",
 		justifyContent: "center",
 	},
+  groupHeader: {
+    backgroundColor: "#f0f2f5",
+    borderTop: "1px solid rgba(0, 0, 0, 0.08)",
+    borderBottom: "1px solid rgba(0, 0, 0, 0.08)",
+    color: "rgb(104, 121, 146)",
+    fontSize: 12,
+    fontWeight: 600,
+    padding: "6px 12px"
+  }
 }));
 
 const reducer = (state, action) => {
@@ -153,12 +162,31 @@ const reducer = (state, action) => {
 };
 
 	const TicketsList = (props) => {
-		const { status, searchParam, showAll, selectedQueueIds, updateCount, style } =
-			props;
+		const {
+			status,
+			searchParam,
+			showAll,
+			selectedQueueIds,
+			updateCount,
+			style,
+			groupMode = "all",
+		} = props;
 	const classes = useStyles();
 	const [pageNumber, setPageNumber] = useState(1);
 	const [ticketsList, dispatch] = useReducer(reducer, []);
 	const { user } = useContext(AuthContext);
+
+	const matchesGroupFilter = ticket => {
+		if (groupMode === "only") {
+			return Boolean(ticket.isGroup);
+		}
+
+		if (groupMode === "exclude") {
+			return !ticket.isGroup;
+		}
+
+		return true;
+	};
 
 	useEffect(() => {
 		dispatch({ type: "RESET" });
@@ -177,22 +205,45 @@ const reducer = (state, action) => {
 		if (!status && !searchParam) return;
 		dispatch({
 			type: "LOAD_TICKETS",
-			payload: tickets,
+			payload: tickets.filter(matchesGroupFilter),
 		});
-	}, [tickets]);
+	}, [tickets, groupMode]);
 
 	useEffect(() => {
 		const socket = openSocket();
 
+		const matchesStatusFilter = ticket => {
+			if (!status) {
+				return true;
+			}
+
+			if (status === "group") {
+				return ticket.isGroup && (ticket.status === "open" || ticket.status === "pending");
+			}
+
+			return ticket.status === status;
+		};
+
 		const shouldUpdateTicket = ticket => !searchParam &&
+			matchesStatusFilter(ticket) &&
+			matchesGroupFilter(ticket) &&
 			(!ticket.userId || ticket.userId === user?.id || showAll) &&
-			(!ticket.queueId || selectedQueueIds.indexOf(ticket.queueId) > -1);
+			(
+				selectedQueueIds.length === 0 ||
+				!ticket.queueId ||
+				selectedQueueIds.indexOf(ticket.queueId) > -1
+			);
 
 		const notBelongsToUserQueues = ticket =>
-			ticket.queueId && selectedQueueIds.indexOf(ticket.queueId) === -1;
+			selectedQueueIds.length > 0 &&
+			ticket.queueId &&
+			selectedQueueIds.indexOf(ticket.queueId) === -1;
 
 		socket.on("connect", () => {
-			if (status) {
+			if (status === "group") {
+				socket.emit("joinTickets", "open");
+				socket.emit("joinTickets", "pending");
+			} else if (status) {
 				socket.emit("joinTickets", status);
 			} else {
 				socket.emit("joinNotification");
@@ -212,6 +263,10 @@ const reducer = (state, action) => {
 					type: "UPDATE_TICKET",
 					payload: data.ticket,
 				});
+			}
+
+			if (data.action === "update" && !shouldUpdateTicket(data.ticket)) {
+				dispatch({ type: "DELETE_TICKET", payload: data.ticket.id });
 			}
 
 			if (data.action === "update" && notBelongsToUserQueues(data.ticket)) {
@@ -244,7 +299,7 @@ const reducer = (state, action) => {
 		return () => {
 			socket.disconnect();
 		};
-	}, [status, searchParam, showAll, user, selectedQueueIds]);
+	}, [status, searchParam, showAll, user, selectedQueueIds, groupMode]);
 
 	useEffect(() => {
     if (typeof updateCount === "function") {
@@ -252,6 +307,45 @@ const reducer = (state, action) => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticketsList]);
+
+  const groupedTickets = useMemo(() => {
+    const shouldGroupByUser = status === "open" || status === "pending" || status === "group";
+    if (!shouldGroupByUser) {
+      return null;
+    }
+
+    const groupsMap = new Map();
+
+    ticketsList.forEach(ticket => {
+      const hasAssignedUser = Boolean(ticket.user?.id);
+      const groupKey = hasAssignedUser ? `user-${ticket.user.id}` : "unassigned";
+      const groupTitle = hasAssignedUser
+        ? `Atendimento distribuido para ${ticket.user.name}`
+        : "Atendimento a distribuir";
+      const sortLabel = hasAssignedUser ? ticket.user.name : "A distribuir";
+
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          key: groupKey,
+          title: groupTitle,
+          sortLabel,
+          isUnassigned: !hasAssignedUser,
+          tickets: []
+        });
+      }
+
+      groupsMap.get(groupKey).tickets.push(ticket);
+    });
+
+    return Array.from(groupsMap.values()).sort((a, b) => {
+      if (a.isUnassigned && !b.isUnassigned) return -1;
+      if (!a.isUnassigned && b.isUnassigned) return 1;
+
+      return a.sortLabel.localeCompare(b.sortLabel, "pt-BR", {
+        sensitivity: "base"
+      });
+    });
+  }, [ticketsList, status]);
 
 	const loadMore = () => {
 		setPageNumber(prevState => prevState + 1);
@@ -289,9 +383,18 @@ const reducer = (state, action) => {
 						</div>
 					) : (
 						<>
-							{ticketsList.map(ticket => (
-								<TicketListItem ticket={ticket} key={ticket.id} />
-							))}
+              {groupedTickets
+                ? groupedTickets.map(group => (
+                    <React.Fragment key={group.key}>
+                      <div className={classes.groupHeader}>{group.title}</div>
+                      {group.tickets.map(ticket => (
+                        <TicketListItem ticket={ticket} key={ticket.id} />
+                      ))}
+                    </React.Fragment>
+                  ))
+                : ticketsList.map(ticket => (
+                    <TicketListItem ticket={ticket} key={ticket.id} />
+                  ))}
 						</>
 					)}
 					{loading && <TicketsListSkeleton />}
