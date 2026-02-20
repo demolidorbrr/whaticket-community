@@ -3,7 +3,6 @@ import { startOfDay, endOfDay, parseISO } from "date-fns";
 
 import Ticket from "../../models/Ticket";
 import Contact from "../../models/Contact";
-import Message from "../../models/Message";
 import Queue from "../../models/Queue";
 import ShowUserService from "../UserServices/ShowUserService";
 import Whatsapp from "../../models/Whatsapp";
@@ -117,43 +116,26 @@ const ListTicketsService = async ({
 
   if (searchParam) {
     const sanitizedSearchParam = searchParam.toLocaleLowerCase().trim();
-
-    includeCondition = [
-      ...includeCondition,
-      {
-        model: Message,
-        as: "messages",
-        attributes: ["id", "body"],
-        where: {
-          body: where(
-            fn("LOWER", col("body")),
-            "LIKE",
-            `%${sanitizedSearchParam}%`
-          )
-        },
-        required: false,
-        duplicating: false
-      }
-    ];
+    const searchLike = `%${sanitizedSearchParam}%`;
+    const escapedSearchLike =
+      Ticket.sequelize?.escape(searchLike) ||
+      `'${searchLike.replace(/'/g, "''")}'`;
 
     whereCondition = {
       ...whereCondition,
       [Op.or]: [
-        {
-          "$contact.name$": where(
-            fn("LOWER", col("contact.name")),
-            "LIKE",
-            `%${sanitizedSearchParam}%`
-          )
-        },
-        { "$contact.number$": { [Op.like]: `%${sanitizedSearchParam}%` } },
-        {
-          "$message.body$": where(
-            fn("LOWER", col("body")),
-            "LIKE",
-            `%${sanitizedSearchParam}%`
-          )
-        }
+        literal(
+          `LOWER(COALESCE(\`contact\`.\`name\`, '')) COLLATE utf8mb4_unicode_ci LIKE LOWER(${escapedSearchLike}) COLLATE utf8mb4_unicode_ci`
+        ),
+        literal(
+          `LOWER(COALESCE(\`contact\`.\`number\`, '')) LIKE LOWER(${escapedSearchLike})`
+        ),
+        literal(
+          `LOWER(COALESCE(\`Ticket\`.\`lastMessage\`, '')) COLLATE utf8mb4_unicode_ci LIKE LOWER(${escapedSearchLike}) COLLATE utf8mb4_unicode_ci`
+        ),
+        literal(
+          `EXISTS (SELECT 1 FROM \`Messages\` AS \`SearchMessage\` WHERE \`SearchMessage\`.\`ticketId\` = \`Ticket\`.\`id\` AND LOWER(COALESCE(\`SearchMessage\`.\`body\`, '')) COLLATE utf8mb4_unicode_ci LIKE LOWER(${escapedSearchLike}) COLLATE utf8mb4_unicode_ci)`
+        )
       ]
     };
   }
@@ -202,6 +184,7 @@ const ListTicketsService = async ({
     },
     include: includeCondition,
     distinct: true,
+    subQuery: !searchParam,
     limit,
     offset,
     order: [["updatedAt", "DESC"]]

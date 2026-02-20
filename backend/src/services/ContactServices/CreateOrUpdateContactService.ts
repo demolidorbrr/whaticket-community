@@ -1,3 +1,4 @@
+import { Op, UniqueConstraintError } from "sequelize";
 import { getIO } from "../../libs/socket";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
@@ -23,6 +24,31 @@ const emitContact = (action: "update" | "create", contact: Contact) => {
   const io = getIO();
 
   io.emit("contact", { action, contact });
+};
+
+const findContactByNumberOrLid = async (
+  number?: string,
+  lid?: string
+): Promise<Contact | null> => {
+  const whereConditions: Array<Record<string, string>> = [];
+
+  if (number) {
+    whereConditions.push({ number });
+  }
+
+  if (lid) {
+    whereConditions.push({ lid });
+  }
+
+  if (!whereConditions.length) {
+    return null;
+  }
+
+  return Contact.findOne({
+    where: {
+      [Op.or]: whereConditions
+    }
+  });
 };
 
 const CreateOrUpdateContactService = async ({
@@ -94,18 +120,40 @@ const CreateOrUpdateContactService = async ({
     return contactByLid;
   }
 
-  const created = await Contact.create({
-    name,
-    number,
-    lid,
-    profilePicUrl,
-    email,
-    isGroup,
-    extraInfo
-  });
+  try {
+    const created = await Contact.create({
+      name,
+      number,
+      lid,
+      profilePicUrl,
+      email,
+      isGroup,
+      extraInfo
+    });
 
-  emitContact("create", created);
-  return created;
+    emitContact("create", created);
+    return created;
+  } catch (error) {
+    if (error instanceof UniqueConstraintError) {
+      const existingContact = await findContactByNumberOrLid(number, lid);
+
+      if (existingContact) {
+        await existingContact.update({
+          name: name || existingContact.name,
+          number: number || existingContact.number,
+          lid: lid || existingContact.lid,
+          profilePicUrl: profilePicUrl || existingContact.profilePicUrl,
+          email: email || existingContact.email,
+          isGroup
+        });
+
+        emitContact("update", existingContact);
+        return existingContact;
+      }
+    }
+
+    throw error;
+  }
 };
 
 export default CreateOrUpdateContactService;
