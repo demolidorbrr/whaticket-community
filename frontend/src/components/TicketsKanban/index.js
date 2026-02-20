@@ -120,7 +120,13 @@ const STATUS_COLUMNS = [
   { key: "closed", label: "Fechado", type: "status", status: "closed" }
 ];
 
+const isPersonTicket = ticket => !ticket?.isGroup;
+
 const upsertTicket = (list, ticket) => {
+  if (!isPersonTicket(ticket)) {
+    return list.filter(item => item.id !== ticket?.id);
+  }
+
   const index = list.findIndex(item => item.id === ticket.id);
   if (index >= 0) {
     const next = [...list];
@@ -221,6 +227,10 @@ const TicketsKanban = ({
     });
 
     tickets.forEach(ticket => {
+      if (!isPersonTicket(ticket)) {
+        return;
+      }
+
       if (!isTicketVisible(ticket)) {
         return;
       }
@@ -289,6 +299,10 @@ const TicketsKanban = ({
       ];
 
       const unique = merged.reduce((acc, item) => {
+        if (!isPersonTicket(item)) {
+          return acc;
+        }
+
         if (!acc.some(ticket => ticket.id === item.id)) {
           acc.push(item);
         }
