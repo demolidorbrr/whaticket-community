@@ -96,19 +96,25 @@ const useStyles = makeStyles(theme => ({
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap",
 	},
-	secondaryRow: {
+	secondaryContent: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 4,
+		width: "100%",
+	},
+	secondaryTopRow: {
 		display: "flex",
 		alignItems: "center",
 		gap: 8,
 		width: "100%",
 	},
-	metadataWrapper: {
+	secondaryMetaRow: {
 		display: "flex",
 		alignItems: "center",
 		gap: 6,
 		minWidth: 0,
-		flex: "1 1 auto",
 		overflow: "hidden",
+		paddingRight: 4,
 	},
 
 	newMessagesCount: {
@@ -137,6 +143,15 @@ const useStyles = makeStyles(theme => ({
 		overflow: "hidden",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap",
+	},
+	ticketTagOverflow: {
+		alignSelf: "center",
+		padding: "1px 6px",
+		borderRadius: 10,
+		fontSize: 11,
+		background: "#E9EDF5",
+		color: "#3F4D67",
+		border: "1px solid #D7DEEA",
 	},
 
 	badgeStyle: {
@@ -237,9 +252,10 @@ const TicketListItem = ({ ticket }) => {
 	const hasValidInteractionDate = !Number.isNaN(lastInteractionDate?.getTime?.());
 	const queueColor = ticket.queue?.color || "#7C7C7C";
 	const queueLabel = ticket.queue?.name || "Sem fila";
-	const primaryTag = Array.isArray(ticket.tags)
-		? normalizeTag(ticket.tags.find(Boolean))
-		: null;
+	const normalizedTags = Array.isArray(ticket.tags)
+		? ticket.tags.map(normalizeTag).filter(Boolean)
+		: [];
+	const visibleTags = normalizedTags.slice(0, 2);
 	const ticketPreview = (ticket.lastMessage || "Sem mensagem")
 		.replace(/\s+/g, " ")
 		.trim();
@@ -339,17 +355,26 @@ const TicketListItem = ({ ticket }) => {
 						</span>
 					}
 					secondary={
-						<span className={classes.secondaryRow}>
-							<Typography
-								className={classes.contactLastMessage}
-								component="span"
-								variant="body2"
-								color="textSecondary"
-								title={ticketPreview}
-							>
-								{ticketPreview}
-							</Typography>
-							<span className={classes.metadataWrapper}>
+						<span className={classes.secondaryContent}>
+							<span className={classes.secondaryTopRow}>
+								<Typography
+									className={classes.contactLastMessage}
+									component="span"
+									variant="body2"
+									color="textSecondary"
+									title={ticketPreview}
+								>
+									{ticketPreview}
+								</Typography>
+								<Badge
+									className={classes.newMessagesCount}
+									badgeContent={ticket.unreadMessages}
+									classes={{
+										badge: classes.badgeStyle,
+									}}
+								/>
+							</span>
+							<span className={classes.secondaryMetaRow}>
 								<span
 									className={classes.queueTag}
 									title={queueLabel}
@@ -361,28 +386,26 @@ const TicketListItem = ({ ticket }) => {
 								>
 									{queueLabel}
 								</span>
-								{primaryTag ? (
+								{visibleTags.map(tag => (
 									<span
+										key={tag.id || tag.name}
 										className={classes.ticketTag}
-										title={primaryTag.name}
+										title={tag.name}
 										style={{
-											backgroundColor: primaryTag.color || "#607d8b",
-											color: getContrastTextColor(primaryTag.color || "#607d8b"),
-											border: `1px solid ${primaryTag.color || "#607d8b"}`,
+											backgroundColor: tag.color || "#607d8b",
+											color: getContrastTextColor(tag.color || "#607d8b"),
+											border: `1px solid ${tag.color || "#607d8b"}`,
 										}}
 									>
-										{primaryTag.name}
+										{tag.name}
+									</span>
+								))}
+								{normalizedTags.length > visibleTags.length ? (
+									<span className={classes.ticketTagOverflow}>
+										+{normalizedTags.length - visibleTags.length}
 									</span>
 								) : null}
 							</span>
-
-							<Badge
-								className={classes.newMessagesCount}
-								badgeContent={ticket.unreadMessages}
-								classes={{
-									badge: classes.badgeStyle,
-								}}
-							/>
 						</span>
 					}
 				/>

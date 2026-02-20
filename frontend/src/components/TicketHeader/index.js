@@ -9,9 +9,18 @@ import { useHistory } from "react-router-dom";
 const useStyles = makeStyles((theme) => ({
   ticketHeader: {
     display: "flex",
-    backgroundColor: "#eee",
+    backgroundColor:
+      theme.palette.type === "dark" ? "#1f2430" : theme.palette.background.paper,
+    color: theme.palette.text.primary,
     flex: "none",
-    borderBottom: "1px solid rgba(0, 0, 0, 0.12)",
+    borderBottom: `1px solid ${theme.palette.divider}`,
+    boxShadow: "none",
+    "& .MuiIconButton-root": {
+      color: theme.palette.text.secondary,
+    },
+    "& .MuiButton-text": {
+      color: theme.palette.text.secondary,
+    },
     [theme.breakpoints.down("sm")]: {
       flexWrap: "wrap",
     },

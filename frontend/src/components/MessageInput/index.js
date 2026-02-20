@@ -53,11 +53,12 @@ const initRecorder = async () => {
 
 const useStyles = makeStyles(theme => ({
   mainWrapper: {
-    background: "#eee",
+    background:
+      theme.palette.type === "dark" ? theme.palette.background.paper : "#eee",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    borderTop: "1px solid rgba(0, 0, 0, 0.12)",
+    borderTop: `1px solid ${theme.palette.divider}`,
     [theme.breakpoints.down("sm")]: {
       position: "fixed",
       bottom: 0,
@@ -66,7 +67,8 @@ const useStyles = makeStyles(theme => ({
   },
 
   newMessageBox: {
-    background: "#eee",
+    background:
+      theme.palette.type === "dark" ? theme.palette.background.paper : "#eee",
     width: "100%",
     display: "flex",
     padding: "7px",
@@ -76,7 +78,11 @@ const useStyles = makeStyles(theme => ({
   messageInputWrapper: {
     padding: 6,
     marginRight: 7,
-    background: "#fff",
+    background:
+      theme.palette.type === "dark"
+        ? "rgba(255, 255, 255, 0.08)"
+        : theme.palette.background.paper,
+    border: `1px solid ${theme.palette.divider}`,
     display: "flex",
     borderRadius: 20,
     flex: 1,
@@ -87,10 +93,19 @@ const useStyles = makeStyles(theme => ({
     paddingLeft: 10,
     flex: 1,
     border: "none",
+    color: theme.palette.text.primary,
+    "& .MuiInputBase-input": {
+      color: theme.palette.text.primary,
+      caretColor: theme.palette.text.primary,
+    },
+    "& .MuiInputBase-input::placeholder": {
+      color: theme.palette.text.secondary,
+      opacity: 1,
+    },
   },
 
   sendMessageIcons: {
-    color: "grey",
+    color: theme.palette.text.secondary,
   },
 
   uploadInput: {
@@ -102,8 +117,9 @@ const useStyles = makeStyles(theme => ({
     padding: "10px 13px",
     position: "relative",
     alignItems: "center",
-    backgroundColor: "#eee",
-    borderTop: "1px solid rgba(0, 0, 0, 0.12)",
+    backgroundColor:
+      theme.palette.type === "dark" ? theme.palette.background.paper : "#eee",
+    borderTop: `1px solid ${theme.palette.divider}`,
   },
 
   mediaPreviewContent: {
@@ -115,7 +131,7 @@ const useStyles = makeStyles(theme => ({
   },
 
   mediaFileName: {
-    color: "#555",
+    color: theme.palette.text.secondary,
     fontSize: 13,
     overflow: "hidden",
     whiteSpace: "nowrap",
@@ -124,7 +140,11 @@ const useStyles = makeStyles(theme => ({
   },
 
   mediaCaptionInputWrapper: {
-    background: "#fff",
+    background:
+      theme.palette.type === "dark"
+        ? "rgba(255, 255, 255, 0.08)"
+        : theme.palette.background.paper,
+    border: `1px solid ${theme.palette.divider}`,
     display: "flex",
     borderRadius: 20,
     padding: "2px 10px",
@@ -132,6 +152,15 @@ const useStyles = makeStyles(theme => ({
 
   mediaCaptionInput: {
     flex: 1,
+    color: theme.palette.text.primary,
+    "& .MuiInputBase-input": {
+      color: theme.palette.text.primary,
+      caretColor: theme.palette.text.primary,
+    },
+    "& .MuiInputBase-input::placeholder": {
+      color: theme.palette.text.secondary,
+      opacity: 1,
+    },
   },
 
   emojiBox: {
@@ -218,21 +247,29 @@ const useStyles = makeStyles(theme => ({
     margin: 0,
     position: "absolute",
     bottom: "50px",
-    background: "#ffffff",
+    background:
+      theme.palette.type === "dark"
+        ? theme.palette.background.paper
+        : theme.palette.background.paper,
     padding: "2px",
-    border: "1px solid #CCC",
+    border: `1px solid ${theme.palette.divider}`,
     left: 0,
     width: "100%",
+    color: theme.palette.text.primary,
     "& li": {
       listStyle: "none",
       "& a": {
         display: "block",
         padding: "8px",
+        color: theme.palette.text.primary,
         textOverflow: "ellipsis",
         overflow: "hidden",
         maxHeight: "32px",
         "&:hover": {
-          background: "#F1F1F1",
+          background:
+            theme.palette.type === "dark"
+              ? "rgba(255,255,255,0.08)"
+              : "#F1F1F1",
           cursor: "pointer",
         },
       },
