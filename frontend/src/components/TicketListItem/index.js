@@ -143,7 +143,13 @@ const TicketListItem = ({ ticket }) => {
 	const parseDateWithUtcFallback = value => {
 		if (!value) return null;
 		if (value instanceof Date) return value;
+		if (typeof value === "number") return new Date(value);
 		if (typeof value !== "string") return new Date(value);
+
+		const numericValue = Number(value);
+		if (!Number.isNaN(numericValue) && Number.isFinite(numericValue)) {
+			return new Date(numericValue);
+		}
 
 		const normalized = value.includes("T") ? value : value.replace(" ", "T");
 		const hasTimezone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(normalized);
@@ -151,7 +157,8 @@ const TicketListItem = ({ ticket }) => {
 		return new Date(hasTimezone ? normalized : `${normalized}Z`);
 	};
 
-	const lastInteractionRaw = ticket.lastMessageAt || ticket.createdAt || ticket.updatedAt;
+	const lastInteractionRaw =
+		ticket.lastMessageAtTs || ticket.lastMessageAt || ticket.createdAt || ticket.updatedAt;
 	const lastInteractionDate = parseDateWithUtcFallback(lastInteractionRaw);
 	const hasValidInteractionDate = !Number.isNaN(lastInteractionDate?.getTime?.());
 

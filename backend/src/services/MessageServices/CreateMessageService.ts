@@ -2,6 +2,7 @@ import { getIO } from "../../libs/socket";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
+import User from "../../models/User";
 
 interface MessageData {
   id: string;
@@ -34,6 +35,11 @@ const CreateMessageService = async ({
           "contact",
           "queue",
           {
+            model: User,
+            as: "user",
+            attributes: ["id", "name"]
+          },
+          {
             model: Whatsapp,
             as: "whatsapp",
             attributes: ["name"]
@@ -52,6 +58,12 @@ const CreateMessageService = async ({
     throw new Error("ERR_CREATING_MESSAGE");
   }
 
+  const ticketPayload = {
+    ...message.ticket.toJSON(),
+    lastMessageAt: message.createdAt,
+    lastMessageAtTs: new Date(message.createdAt).getTime()
+  };
+
   const io = getIO();
   io.to(message.ticketId.toString())
     .to(message.ticket.status)
@@ -59,7 +71,7 @@ const CreateMessageService = async ({
     .emit("appMessage", {
       action: "create",
       message,
-      ticket: message.ticket,
+      ticket: ticketPayload,
       contact: message.ticket.contact
     });
 

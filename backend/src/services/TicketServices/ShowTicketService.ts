@@ -16,6 +16,12 @@ const ShowTicketService = async (id: string | number): Promise<Ticket> => {
             "(SELECT MAX(`createdAt`) FROM `Messages` WHERE `Messages`.`ticketId` = `Ticket`.`id`)"
           ),
           "lastMessageAt"
+        ],
+        [
+          literal(
+            "(SELECT MAX(UNIX_TIMESTAMP(`createdAt`)) * 1000 FROM `Messages` WHERE `Messages`.`ticketId` = `Ticket`.`id`)"
+          ),
+          "lastMessageAtTs"
         ]
       ]
     },

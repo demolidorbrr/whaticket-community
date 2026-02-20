@@ -9,7 +9,7 @@ interface Request {
   status?: string;
 }
 
-const allowedStatus = ["pending", "canceled", "sent", "failed"];
+const allowedStatus = ["pending", "canceled", "sent", "failed", "completed"];
 
 const UpdateScheduleService = async ({
   scheduleId,
