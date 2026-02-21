@@ -95,6 +95,9 @@ const useStyles = makeStyles(theme => ({
 		overflow: "hidden",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap",
+		// Espacamento do preview para nao ficar "grudado" no restante do card.
+		paddingTop: 4,
+		paddingBottom: 4,
 	},
 	secondaryContent: {
 		display: "flex",
