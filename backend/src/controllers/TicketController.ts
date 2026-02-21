@@ -1,5 +1,10 @@
-import { Request, Response } from "express";
+﻿import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
+import {
+  getCompanyNotificationRoom,
+  getCompanyStatusRoom,
+  getCompanyTicketRoom
+} from "../libs/socketRooms";
 
 import CreateTicketService from "../services/TicketServices/CreateTicketService";
 import DeleteTicketService from "../services/TicketServices/DeleteTicketService";
@@ -69,7 +74,11 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const ticket = await CreateTicketService({ contactId, status, userId });
 
   const io = getIO();
-  io.to(ticket.status).emit("ticket", {
+  const statusRoomName = ticket.companyId
+    ? getCompanyStatusRoom(ticket.companyId, ticket.status)
+    : ticket.status;
+
+  io.to(statusRoomName).emit("ticket", {
     action: "update",
     ticket
   });
@@ -123,10 +132,24 @@ export const remove = async (
   const ticket = await DeleteTicketService(ticketId);
 
   const io = getIO();
-  io.to(ticket.status).to(ticketId).to("notification").emit("ticket", {
-    action: "delete",
-    ticketId: +ticketId
-  });
+  const statusRoomName = ticket.companyId
+    ? getCompanyStatusRoom(ticket.companyId, ticket.status)
+    : ticket.status;
+  const ticketRoomName = ticket.companyId
+    ? getCompanyTicketRoom(ticket.companyId, ticketId)
+    : ticketId;
+  const notificationRoomName = ticket.companyId
+    ? getCompanyNotificationRoom(ticket.companyId)
+    : "notification";
+
+  io.to(statusRoomName)
+    .to(ticketRoomName)
+    .to(notificationRoomName)
+    .emit("ticket", {
+      action: "delete",
+      ticketId: +ticketId
+    });
 
   return res.status(200).json({ message: "ticket deleted" });
 };
+

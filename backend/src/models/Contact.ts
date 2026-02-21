@@ -1,4 +1,4 @@
-import {
+﻿import {
   Table,
   Column,
   CreatedAt,
@@ -7,15 +7,52 @@ import {
   PrimaryKey,
   AutoIncrement,
   AllowNull,
-  Unique,
   Default,
-  HasMany
+  HasMany,
+  ForeignKey,
+  BelongsTo,
+  BeforeFind,
+  BeforeCount,
+  BeforeBulkUpdate,
+  BeforeBulkDestroy,
+  BeforeCreate,
+  BeforeBulkCreate
 } from "sequelize-typescript";
 import ContactCustomField from "./ContactCustomField";
 import Ticket from "./Ticket";
+import Company from "./Company";
+import {
+  applyTenantScope,
+  applyTenantScopeToBulkInstances,
+  applyTenantScopeToInstance
+} from "../helpers/ApplyTenantScope";
 
 @Table
 class Contact extends Model<Contact> {
+  @BeforeFind
+  @BeforeCount
+  static applyTenantFilter(options: Record<string, unknown>): void {
+    applyTenantScope(options);
+  }
+
+  @BeforeBulkUpdate
+  @BeforeBulkDestroy
+  static applyTenantFilterToBulkOperations(
+    options: Record<string, unknown>
+  ): void {
+    applyTenantScope(options);
+  }
+
+  @BeforeCreate
+  static assignCompanyId(instance: Contact): void {
+    applyTenantScopeToInstance(instance);
+  }
+
+  @BeforeBulkCreate
+  static assignCompanyIdToBulk(instances: Contact[]): void {
+    applyTenantScopeToBulkInstances(instances);
+  }
+
   @PrimaryKey
   @AutoIncrement
   @Column
@@ -24,13 +61,18 @@ class Contact extends Model<Contact> {
   @Column
   name: string;
 
-  @Unique
   @Column
   number: string;
 
-  @Unique
   @Column
   lid: string;
+
+  @ForeignKey(() => Company)
+  @Column
+  companyId: number;
+
+  @BelongsTo(() => Company)
+  company: Company;
 
   @AllowNull(false)
   @Default("")
@@ -58,3 +100,4 @@ class Contact extends Model<Contact> {
 }
 
 export default Contact;
+

@@ -1,4 +1,4 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 
 import userRoutes from "./userRoutes";
 import authRoutes from "./authRoutes";
@@ -15,6 +15,8 @@ import tagRoutes from "./tagRoutes";
 import metricsRoutes from "./metricsRoutes";
 import channelRoutes from "./channelRoutes";
 import scheduleRoutes from "./scheduleRoutes";
+import planRoutes from "./planRoutes";
+import companyRoutes from "./companyRoutes";
 
 const routes = Router();
 
@@ -32,6 +34,9 @@ routes.use(tagRoutes);
 routes.use(metricsRoutes);
 routes.use(channelRoutes);
 routes.use(scheduleRoutes);
+routes.use(planRoutes);
+routes.use(companyRoutes);
 routes.use("/api/messages", apiRoutes);
 
 export default routes;
+

@@ -1,12 +1,13 @@
-import { Request, Response } from "express";
+﻿import { Request, Response } from "express";
 import AppError from "../errors/AppError";
 import ListAIQueueMetricsService from "../services/MetricsServices/ListAIQueueMetricsService";
+import { isAdminProfile } from "../helpers/CheckUserProfile";
 
 export const aiQueues = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  if (req.user.profile !== "admin") {
+  if (!isAdminProfile(req.user.profile)) {
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
 
@@ -19,3 +20,4 @@ export const aiQueues = async (
 
   return res.status(200).json(metrics);
 };
+

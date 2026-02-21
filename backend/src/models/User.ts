@@ -1,4 +1,4 @@
-import {
+﻿import {
   Table,
   Column,
   CreatedAt,
@@ -13,16 +13,51 @@ import {
   HasMany,
   BelongsToMany,
   ForeignKey,
-  BelongsTo
+  BelongsTo,
+  BeforeFind,
+  BeforeCount,
+  BeforeBulkUpdate,
+  BeforeBulkDestroy,
+  BeforeBulkCreate
 } from "sequelize-typescript";
 import { hash, compare } from "bcryptjs";
 import Ticket from "./Ticket";
 import Queue from "./Queue";
 import UserQueue from "./UserQueue";
 import Whatsapp from "./Whatsapp";
+import Company from "./Company";
+import {
+  applyTenantScope,
+  applyTenantScopeToBulkInstances,
+  applyTenantScopeToInstance
+} from "../helpers/ApplyTenantScope";
 
 @Table
 class User extends Model<User> {
+  @BeforeFind
+  @BeforeCount
+  static applyTenantFilter(options: Record<string, unknown>): void {
+    applyTenantScope(options);
+  }
+
+  @BeforeBulkUpdate
+  @BeforeBulkDestroy
+  static applyTenantFilterToBulkOperations(
+    options: Record<string, unknown>
+  ): void {
+    applyTenantScope(options);
+  }
+
+  @BeforeCreate
+  static assignCompanyId(instance: User): void {
+    applyTenantScopeToInstance(instance);
+  }
+
+  @BeforeBulkCreate
+  static assignCompanyIdToBulk(instances: User[]): void {
+    applyTenantScopeToBulkInstances(instances);
+  }
+
   @PrimaryKey
   @AutoIncrement
   @Column
@@ -47,6 +82,13 @@ class User extends Model<User> {
   @Default("admin")
   @Column
   profile: string;
+
+  @ForeignKey(() => Company)
+  @Column
+  companyId: number;
+
+  @BelongsTo(() => Company)
+  company: Company;
 
   @ForeignKey(() => Whatsapp)
   @Column
@@ -81,3 +123,4 @@ class User extends Model<User> {
 }
 
 export default User;
+

@@ -1,4 +1,4 @@
-import qrCode from "qrcode-terminal";
+﻿import qrCode from "qrcode-terminal";
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -9,7 +9,7 @@ import {
   Contact as WbotContact,
   MessageSendOptions
 } from "whatsapp-web.js";
-import { getIO } from "../../../libs/socket";
+import { emitByCompany } from "../../../helpers/SocketEmitByCompany";
 import Whatsapp from "../../../models/Whatsapp";
 import AppError from "../../../errors/AppError";
 import { logger } from "../../../utils/logger";
@@ -591,7 +591,6 @@ const deleteMessage = async (
 };
 
 const init = async (whatsapp: Whatsapp): Promise<void> => {
-  const io = getIO();
   const sessionName = whatsapp.name;
 
   try {
@@ -634,7 +633,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         sessions.push(wbot);
       }
 
-      io.emit("whatsappSession", {
+      emitByCompany(whatsapp.companyId, "whatsappSession", {
         action: "update",
         session: whatsapp
       });
@@ -658,7 +657,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         retries: whatsapp.retries + 1
       });
 
-      io.emit("whatsappSession", {
+      emitByCompany(whatsapp.companyId, "whatsappSession", {
         action: "update",
         session: whatsapp
       });
@@ -674,7 +673,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
           retries: 0
         });
 
-        io.emit("whatsappSession", {
+        emitByCompany(whatsapp.companyId, "whatsappSession", {
           action: "update",
           session: whatsapp
         });
@@ -697,7 +696,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       try {
         await whatsapp.update({ status: newState });
 
-        io.emit("whatsappSession", {
+        emitByCompany(whatsapp.companyId, "whatsappSession", {
           action: "update",
           session: whatsapp
         });
@@ -711,7 +710,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       try {
         await whatsapp.update({ status: "OPENING", session: "" });
 
-        io.emit("whatsappSession", {
+        emitByCompany(whatsapp.companyId, "whatsappSession", {
           action: "update",
           session: whatsapp
         });
@@ -785,7 +784,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         retries: nextRetries
       });
 
-      io.emit("whatsappSession", {
+      emitByCompany(whatsapp.companyId, "whatsappSession", {
         action: "update",
         session: whatsapp
       });
@@ -818,3 +817,4 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   sendSeen,
   fetchChatMessages
 };
+

@@ -1,6 +1,8 @@
-import * as Yup from "yup";
+﻿import * as Yup from "yup";
 import AppError from "../../errors/AppError";
 import Queue from "../../models/Queue";
+import { getTenantContext } from "../../libs/tenantContext";
+import ValidateCompanyPlanLimitService from "../CompanyServices/ValidateCompanyPlanLimitService";
 
 interface QueueData {
   name: string;
@@ -14,6 +16,17 @@ interface QueueData {
 }
 
 const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {
+  const tenantContext = getTenantContext();
+
+  if (!tenantContext?.companyId) {
+    throw new AppError("ERR_TENANT_CONTEXT_REQUIRED", 500);
+  }
+
+  await ValidateCompanyPlanLimitService({
+    companyId: tenantContext.companyId,
+    resource: "queues"
+  });
+
   const normalizedQueueData = {
     ...queueData,
     aiWebhookUrl: queueData.aiWebhookUrl?.trim() || null,
@@ -77,3 +90,4 @@ const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {
 };
 
 export default CreateQueueService;
+

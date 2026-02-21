@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useState } from "react";
+﻿import React, { useContext, useEffect, useMemo, useState } from "react";
 import {
   Button,
   FormControlLabel,
@@ -43,7 +43,9 @@ const useStyles = makeStyles(theme => ({
 const Kanban = () => {
   const classes = useStyles();
   const { user } = useContext(AuthContext);
-  const isAdmin = user.profile?.toUpperCase() === "ADMIN";
+  const isAdmin = ["ADMIN", "SUPERADMIN"].includes(
+    user.profile?.toUpperCase()
+  );
   const userQueueIds = useMemo(
     () => (user?.queues || []).map(queue => queue.id),
     [user?.queues]
@@ -235,3 +237,4 @@ const Kanban = () => {
 };
 
 export default Kanban;
+

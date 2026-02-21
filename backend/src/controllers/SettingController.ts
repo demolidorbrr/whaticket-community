@@ -1,13 +1,14 @@
-import { Request, Response } from "express";
+﻿import { Request, Response } from "express";
 
 import { getIO } from "../libs/socket";
 import AppError from "../errors/AppError";
+import { isSuperAdminProfile } from "../helpers/CheckUserProfile";
 
 import UpdateSettingService from "../services/SettingServices/UpdateSettingService";
 import ListSettingsService from "../services/SettingServices/ListSettingsService";
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
-  if (req.user.profile !== "admin") {
+  if (!isSuperAdminProfile(req.user.profile)) {
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
 
@@ -20,7 +21,7 @@ export const update = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  if (req.user.profile !== "admin") {
+  if (!isSuperAdminProfile(req.user.profile)) {
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
   const { settingKey: key } = req.params;
@@ -39,3 +40,4 @@ export const update = async (
 
   return res.status(200).json(setting);
 };
+

@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from "react";
+﻿import React, { useContext, useEffect, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 
 import ListItem from "@material-ui/core/ListItem";
@@ -135,10 +135,16 @@ const MainListItems = (props) => {
               primary="Tags"
               icon={<LocalOfferOutlinedIcon />}
             />
-            <ListItemLink
-              to="/settings"
-              primary={i18n.t("mainDrawer.listItems.settings")}
-              icon={<SettingsOutlinedIcon />}
+            <Can
+              role={user.profile}
+              perform="settings-page:view"
+              yes={() => (
+                <ListItemLink
+                  to="/settings"
+                  primary={i18n.t("mainDrawer.listItems.settings")}
+                  icon={<SettingsOutlinedIcon />}
+                />
+              )}
             />
           </>
         )}
@@ -148,3 +154,4 @@ const MainListItems = (props) => {
 };
 
 export default MainListItems;
+

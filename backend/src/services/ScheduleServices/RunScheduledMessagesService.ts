@@ -1,12 +1,12 @@
-import { Op } from "sequelize";
+﻿import { Op } from "sequelize";
 
 import Schedule from "../../models/Schedule";
-import { getIO } from "../../libs/socket";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import SendChannelMessageService from "../ChannelServices/SendChannelMessageService";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import { logger } from "../../utils/logger";
+import { emitByCompany } from "../../helpers/SocketEmitByCompany";
 
 let isRunning = false;
 
@@ -15,7 +15,6 @@ const RunScheduledMessagesService = async (): Promise<void> => {
   isRunning = true;
 
   try {
-    const io = getIO();
     const schedules = await Schedule.findAll({
       where: {
         status: "pending",
@@ -54,7 +53,8 @@ const RunScheduledMessagesService = async (): Promise<void> => {
           sentAt: new Date(),
           errorMessage: null
         });
-        io.emit("schedule", {
+
+        emitByCompany(schedule.companyId, "schedule", {
           action: "update",
           schedule
         });
@@ -68,7 +68,8 @@ const RunScheduledMessagesService = async (): Promise<void> => {
           status: "failed",
           errorMessage: err instanceof Error ? err.message : "UNKNOWN_ERROR"
         });
-        io.emit("schedule", {
+
+        emitByCompany(schedule.companyId, "schedule", {
           action: "update",
           schedule
         });
@@ -80,3 +81,4 @@ const RunScheduledMessagesService = async (): Promise<void> => {
 };
 
 export default RunScheduledMessagesService;
+

@@ -1,9 +1,18 @@
 import Whatsapp from "../../models/Whatsapp";
 import AppError from "../../errors/AppError";
+import { getTenantContext } from "../../libs/tenantContext";
 
 const DeleteWhatsAppService = async (id: string): Promise<void> => {
+  const tenantContext = getTenantContext();
+  // Em requests autenticadas, remove apenas conexao da empresa corrente.
+  const where: { id: string; companyId?: number } = { id };
+
+  if (tenantContext?.companyId) {
+    where.companyId = tenantContext.companyId;
+  }
+
   const whatsapp = await Whatsapp.findOne({
-    where: { id }
+    where
   });
 
   if (!whatsapp) {

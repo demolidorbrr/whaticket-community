@@ -1,6 +1,5 @@
-import * as Yup from "yup";
+﻿import * as Yup from "yup";
 import { Request, Response } from "express";
-import { getIO } from "../libs/socket";
 
 import ListContactsService from "../services/ContactServices/ListContactsService";
 import CreateContactService from "../services/ContactServices/CreateContactService";
@@ -13,6 +12,7 @@ import CheckIsValidContact from "../services/WbotServices/CheckIsValidContact";
 import GetProfilePicUrl from "../services/WbotServices/GetProfilePicUrl";
 import AppError from "../errors/AppError";
 import GetContactService from "../services/ContactServices/GetContactService";
+import { emitByCompany } from "../helpers/SocketEmitByCompany";
 
 type IndexQuery = {
   searchParam: string;
@@ -82,10 +82,10 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   const profilePicUrl = await GetProfilePicUrl(validNumber);
 
-  let name = newContact.name;
-  let number = validNumber;
-  let email = newContact.email;
-  let extraInfo = newContact.extraInfo;
+  const name = newContact.name;
+  const number = validNumber;
+  const email = newContact.email;
+  const extraInfo = newContact.extraInfo;
 
   const contact = await CreateContactService({
     name,
@@ -95,8 +95,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     profilePicUrl
   });
 
-  const io = getIO();
-  io.emit("contact", {
+  emitByCompany(contact.companyId, "contact", {
     action: "create",
     contact
   });
@@ -138,8 +137,7 @@ export const update = async (
 
   const contact = await UpdateContactService({ contactData, contactId });
 
-  const io = getIO();
-  io.emit("contact", {
+  emitByCompany(contact.companyId, "contact", {
     action: "update",
     contact
   });
@@ -155,11 +153,11 @@ export const remove = async (
 
   await DeleteContactService(contactId);
 
-  const io = getIO();
-  io.emit("contact", {
+  emitByCompany(req.user.companyId, "contact", {
     action: "delete",
     contactId
   });
 
   return res.status(200).json({ message: "Contact deleted" });
 };
+
