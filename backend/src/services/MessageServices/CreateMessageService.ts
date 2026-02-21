@@ -11,7 +11,7 @@ import User from "../../models/User";
 import { logger } from "../../utils/logger";
 
 interface MessageData {
-  id: string;
+  id?: string;
   ticketId: number;
   body: string;
   contactId?: number;
@@ -21,18 +21,94 @@ interface MessageData {
   mediaUrl?: string;
   ack?: number;
   quotedMsgId?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 interface Request {
   messageData: MessageData;
 }
 
+const createSyntheticMessageId = (
+  baseId: string | undefined,
+  ticketId: number
+): string => {
+  const normalizedBaseId = baseId && baseId.trim() ? baseId.trim() : "msg";
+  const randomSuffix = Math.random().toString(36).slice(2, 8);
+  return `${normalizedBaseId}-${ticketId}-${Date.now()}-${randomSuffix}`;
+};
+
+const resolveMessageDataToPersist = async (
+  messageData: MessageData
+): Promise<MessageData> => {
+  const messageId = messageData.id?.trim();
+
+  if (!messageId) {
+    const generatedId = createSyntheticMessageId(undefined, messageData.ticketId);
+
+    logger.warn({
+      info: "Persisting message with generated id because provider id is missing",
+      ticketId: messageData.ticketId,
+      generatedId
+    });
+
+    return {
+      ...messageData,
+      id: generatedId
+    };
+  }
+
+  const existingMessage = await Message.findByPk(messageId, {
+    attributes: ["id", "ticketId", "body", "fromMe"]
+  });
+
+  if (!existingMessage) {
+    return {
+      ...messageData,
+      id: messageId
+    };
+  }
+
+  const sameTicket = Number(existingMessage.ticketId) === Number(messageData.ticketId);
+  const sameBody = String(existingMessage.body || "") === String(messageData.body || "");
+  const sameDirection =
+    Boolean(existingMessage.fromMe) === Boolean(messageData.fromMe);
+
+  if (sameTicket && sameBody && sameDirection) {
+    return {
+      ...messageData,
+      id: messageId
+    };
+  }
+
+  const generatedId = createSyntheticMessageId(messageId, messageData.ticketId);
+
+  logger.warn({
+    info: "Message id collision detected; preserving message with synthetic id",
+    originalMessageId: messageId,
+    generatedId,
+    existingTicketId: existingMessage.ticketId,
+    incomingTicketId: messageData.ticketId
+  });
+
+  return {
+    ...messageData,
+    id: generatedId
+  };
+};
+
 const CreateMessageService = async ({
   messageData
 }: Request): Promise<Message> => {
-  await Message.upsert(messageData);
+  const resolvedMessageData = await resolveMessageDataToPersist(messageData);
 
-  const message = await Message.findByPk(messageData.id, {
+  if (!resolvedMessageData.id) {
+    throw new Error("ERR_CREATING_MESSAGE_WITHOUT_ID");
+  }
+
+  await Message.upsert(resolvedMessageData);
+
+  const message = await Message.findByPk(resolvedMessageData.id, {
     include: [
       "contact",
       {

@@ -4,6 +4,7 @@ import {
   getCompanyNotificationRoom,
   getCompanyStatusRoom
 } from "../../libs/socketRooms";
+import Queue from "../../models/Queue";
 import Ticket from "../../models/Ticket";
 import { logger } from "../../utils/logger";
 import GetSettingValueService from "../SettingServices/GetSettingValueService";
@@ -38,6 +39,7 @@ const RunSLAEscalationService = async (): Promise<void> => {
   });
 
   const io = getIO();
+  const escalationQueueByCompany = new Map<number, number | null>();
 
   for (const ticket of overdueTickets) {
     const previousStatus = ticket.status;
@@ -47,10 +49,28 @@ const RunSLAEscalationService = async (): Promise<void> => {
         ? new Date(Date.now() + replyMinutes * 60 * 1000)
         : ticket.slaDueAt;
 
-    const nextQueueId =
-      escalationQueueId && escalationQueueId > 0
-        ? escalationQueueId
-        : ticket.queueId;
+    let nextQueueId = ticket.queueId;
+    if (escalationQueueId && escalationQueueId > 0 && ticket.companyId) {
+      let resolvedEscalationQueueId = escalationQueueByCompany.get(
+        ticket.companyId
+      );
+
+      if (resolvedEscalationQueueId === undefined) {
+        const queueExists = await Queue.count({
+          where: {
+            id: escalationQueueId,
+            companyId: ticket.companyId
+          }
+        });
+
+        resolvedEscalationQueueId = queueExists ? escalationQueueId : null;
+        escalationQueueByCompany.set(ticket.companyId, resolvedEscalationQueueId);
+      }
+
+      if (resolvedEscalationQueueId) {
+        nextQueueId = resolvedEscalationQueueId;
+      }
+    }
 
     await ticket.update({
       status: "pending",

@@ -14,6 +14,12 @@ export const runWithTenantContext = async <T>(
   return tenantContextStorage.run(tenantContext, callback);
 };
 
+export const setTenantContext = (
+  tenantContext: TenantContextData
+): void => {
+  tenantContextStorage.enterWith(tenantContext);
+};
+
 export const getTenantContext = (): TenantContextData | undefined => {
   return tenantContextStorage.getStore();
 };

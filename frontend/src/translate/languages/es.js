@@ -441,12 +441,15 @@ const messages = {
         ERR_WAPP_INVALID_CONTACT: "Este no es un número de whatsapp válido.",
         ERR_WAPP_DOWNLOAD_MEDIA:
           "No se pudieron descargar los medios de WhatsApp. Verifique la página de conexiones.",
+        ERR_WAPP_SELECTION_REQUIRED:
+          "Seleccione la conexión (whatsappId) para evitar mezcla entre empresas.",
         ERR_INVALID_CREDENTIALS: "Error de autenticación. Vuelva a intentarlo.",
         ERR_SENDING_WAPP_MSG:
           "Error al enviar el mensaje de WhatsApp. Verifique la página de conexiones.",
         ERR_DELETE_WAPP_MSG: "No se pudo borrar el mensaje de WhatsApp.",
         ERR_OTHER_OPEN_TICKET: "Ya hay un ticket abierto para este contacto.",
         ERR_SESSION_EXPIRED: "Sesión caducada. Inicie sesión.",
+        ERR_INVALID_TOKEN: "Sesión caducada. Inicie sesión.",
         ERR_USER_CREATION_DISABLED:
           "La creación de usuarios fue deshabilitada por el administrador.",
         ERR_NO_PERMISSION: "No tienes permiso para acceder a este recurso.",

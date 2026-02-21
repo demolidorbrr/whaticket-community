@@ -434,6 +434,8 @@ const messages = {
         ERR_WAPP_INVALID_CONTACT: "This is not a valid whatsapp number.",
         ERR_WAPP_DOWNLOAD_MEDIA:
           "Could not download media from WhatsApp. Check connections page.",
+        ERR_WAPP_SELECTION_REQUIRED:
+          "Please select a connection (whatsappId) to avoid cross-company routing.",
         ERR_INVALID_CREDENTIALS: "Authentication error. Please try again.",
         ERR_SENDING_WAPP_MSG:
           "Error sending WhatsApp message. Check connections page.",
@@ -441,6 +443,7 @@ const messages = {
         ERR_OTHER_OPEN_TICKET:
           "There's already an open ticket for this contact.",
         ERR_SESSION_EXPIRED: "Session expired. Please login.",
+        ERR_INVALID_TOKEN: "Session expired. Please login.",
         ERR_USER_CREATION_DISABLED:
           "User creation was disabled by administrator.",
         ERR_NO_PERMISSION: "You don't have permission to access this resource.",

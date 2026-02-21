@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
 import SetTicketMessagesAsRead from "../../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../../libs/socket";
@@ -6,7 +7,12 @@ import {
   getCompanyStatusRoom,
   getCompanyTicketRoom
 } from "../../libs/socketRooms";
+import AppError from "../../errors/AppError";
+import Queue from "../../models/Queue";
+import Tag from "../../models/Tag";
 import Ticket from "../../models/Ticket";
+import User from "../../models/User";
+import Whatsapp from "../../models/Whatsapp";
 import { logger } from "../../utils/logger";
 import ShowTicketService from "./ShowTicketService";
 import LogTicketEventService from "./LogTicketEventService";
@@ -42,6 +48,64 @@ const UpdateTicketService = async ({
   const ticket = await ShowTicketService(ticketId);
   await SetTicketMessagesAsRead(ticket);
 
+  const ticketCompanyId = ticket.companyId;
+  if (!ticketCompanyId) {
+    throw new AppError("ERR_NO_COMPANY_FOUND", 403);
+  }
+
+  if (queueId !== undefined && queueId !== null) {
+    const queueExists = await Queue.count({
+      where: { id: queueId, companyId: ticketCompanyId }
+    });
+
+    if (!queueExists) {
+      throw new AppError("ERR_NO_PERMISSION", 403);
+    }
+  }
+
+  if (userId !== undefined && userId !== null) {
+    const userExists = await User.count({
+      where: { id: userId, companyId: ticketCompanyId }
+    });
+
+    if (!userExists) {
+      throw new AppError("ERR_NO_PERMISSION", 403);
+    }
+  }
+
+  if (whatsappId !== undefined && whatsappId !== null) {
+    const whatsappExists = await Whatsapp.count({
+      where: { id: whatsappId, companyId: ticketCompanyId }
+    });
+
+    if (!whatsappExists) {
+      throw new AppError("ERR_NO_PERMISSION", 403);
+    }
+  }
+
+  const rawTagIds = Array.isArray(tagIds) ? tagIds.map(Number) : [];
+  if (
+    Array.isArray(tagIds) &&
+    rawTagIds.some(tagId => !Number.isInteger(tagId) || tagId <= 0)
+  ) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
+
+  const normalizedTagIds = [...new Set(rawTagIds)];
+
+  if (normalizedTagIds.length > 0) {
+    const validTagsCount = await Tag.count({
+      where: {
+        id: { [Op.in]: normalizedTagIds },
+        companyId: ticketCompanyId
+      }
+    });
+
+    if (validTagsCount !== normalizedTagIds.length) {
+      throw new AppError("ERR_NO_PERMISSION", 403);
+    }
+  }
+
   if (whatsappId && ticket.whatsappId !== whatsappId) {
     await CheckContactOpenTickets(ticket.contactId, whatsappId);
   }
@@ -68,7 +132,7 @@ const UpdateTicketService = async ({
   }
 
   if (Array.isArray(tagIds)) {
-    await ticket.$set("tags", tagIds);
+    await ticket.$set("tags", normalizedTagIds);
   }
 
   if (status === "closed" && !ticket.resolvedAt) {

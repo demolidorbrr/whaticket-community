@@ -7,41 +7,92 @@ import { Dialog, DialogContent, Paper, Typography } from "@material-ui/core";
 import { i18n } from "../../translate/i18n";
 import api from "../../services/api";
 
+const SESSION_EXPIRED_ERROR = "ERR_SESSION_EXPIRED";
+const INVALID_TOKEN_ERROR = "ERR_INVALID_TOKEN";
+const LEGACY_INVALID_TOKEN_ERROR =
+	"Invalid token. We'll try to assign a new one on next request";
+
+const shouldCloseQrModal = session => {
+	const status = String(session?.status || "").toUpperCase();
+	return status === "CONNECTED" || session?.qrcode === "";
+};
+
+const isAuthError = err => {
+	const status = err?.response?.status;
+	const errorCode = err?.response?.data?.error || err?.response?.data?.message;
+
+	return (
+		status === 401 ||
+		errorCode === SESSION_EXPIRED_ERROR ||
+		errorCode === INVALID_TOKEN_ERROR ||
+		errorCode === LEGACY_INVALID_TOKEN_ERROR
+	);
+};
+
 const QrcodeModal = ({ open, onClose, whatsAppId }) => {
 	const [qrCode, setQrCode] = useState("");
 
 	useEffect(() => {
-		const fetchSession = async () => {
-			if (!whatsAppId) return;
+		if (!open || !whatsAppId) return;
 
+		let isMounted = true;
+
+		const fetchSession = async () => {
 			try {
 				const { data } = await api.get(`/whatsapp/${whatsAppId}`);
-				setQrCode(data.qrcode);
+				if (!isMounted) return;
+
+				// Fecha o modal imediatamente quando a sessao ja conectou.
+				if (shouldCloseQrModal(data)) {
+					setQrCode("");
+					onClose();
+					return;
+				}
+
+				setQrCode(data.qrcode || "");
 			} catch (err) {
-				toastError(err);
+				if (!isMounted) return;
+
+				if (!isAuthError(err)) {
+					toastError(err);
+				}
 			}
 		};
+
 		fetchSession();
-	}, [whatsAppId]);
+
+		return () => {
+			isMounted = false;
+		};
+	}, [open, whatsAppId, onClose]);
 
 	useEffect(() => {
-		if (!whatsAppId) return;
+		if (!open || !whatsAppId) return;
+
 		const socket = openSocket();
 
 		socket.on("whatsappSession", data => {
-			if (data.action === "update" && data.session.id === whatsAppId) {
-				setQrCode(data.session.qrcode);
+			const session = data?.session;
+			const currentSessionId = Number(session?.id);
+			const selectedSessionId = Number(whatsAppId);
+
+			if (data?.action !== "update" || currentSessionId !== selectedSessionId) {
+				return;
 			}
 
-			if (data.action === "update" && data.session.qrcode === "") {
+			if (shouldCloseQrModal(session)) {
+				setQrCode("");
 				onClose();
+				return;
 			}
+
+			setQrCode(session?.qrcode || "");
 		});
 
 		return () => {
 			socket.disconnect();
 		};
-	}, [whatsAppId, onClose]);
+	}, [open, whatsAppId, onClose]);
 
 	return (
 		<Dialog open={open} onClose={onClose} maxWidth="lg" scroll="paper">

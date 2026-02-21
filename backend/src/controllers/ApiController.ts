@@ -34,21 +34,6 @@ const createContact = async (
   whatsappId: number | undefined,
   newContact: string
 ) => {
-  await CheckIsValidContact(newContact);
-
-  const validNumber: any = await CheckContactNumber(newContact);
-
-  const profilePicUrl = await GetProfilePicUrl(validNumber);
-
-  const number = validNumber;
-
-  const contactData = {
-    name: `${number}`,
-    number,
-    profilePicUrl,
-    isGroup: false
-  };
-
   let whatsapp: Whatsapp | null;
 
   if (whatsappId === undefined) {
@@ -73,6 +58,26 @@ const createContact = async (
       profile: "api"
     },
     async () => {
+      await CheckIsValidContact(newContact, selectedWhatsapp.id);
+
+      const validNumber: any = await CheckContactNumber(
+        newContact,
+        selectedWhatsapp.id
+      );
+
+      const profilePicUrl = await GetProfilePicUrl(
+        validNumber,
+        selectedWhatsapp.id
+      );
+
+      const number = validNumber;
+      const contactData = {
+        name: `${number}`,
+        number,
+        profilePicUrl,
+        isGroup: false
+      };
+
       const contact = await CreateOrUpdateContactService(contactData);
 
       const createTicket = await FindOrCreateTicketService(

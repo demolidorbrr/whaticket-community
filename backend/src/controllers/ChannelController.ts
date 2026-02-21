@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import * as Yup from "yup";
 import AppError from "../errors/AppError";
+import Queue from "../models/Queue";
 import Whatsapp from "../models/Whatsapp";
 import CreateMessageService from "../services/MessageServices/CreateMessageService";
 import CreateOrUpdateContactService from "../services/ContactServices/CreateOrUpdateContactService";
@@ -123,6 +124,20 @@ export const inbound = async (
       });
 
       const ticket = await FindOrCreateTicketService(contact, selectedWhatsapp.id, 1);
+
+      if (payload.queueId) {
+        const queueExists = await Queue.count({
+          where: {
+            id: payload.queueId,
+            companyId: selectedWhatsapp.companyId
+          }
+        });
+
+        if (!queueExists) {
+          throw new AppError("ERR_NO_PERMISSION", 403);
+        }
+      }
+
       await ticket.update({
         channel,
         queueId: payload.queueId || ticket.queueId,

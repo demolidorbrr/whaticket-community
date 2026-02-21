@@ -1,21 +1,23 @@
 import openSocket from "socket.io-client";
 import { getBackendUrl } from "../config";
+import { readStoredToken } from "./api";
 
 function connectToSocket() {
-    const token = localStorage.getItem("token");
-    let parsedToken = "";
+    const parsedToken = readStoredToken();
 
-    try {
-      parsedToken = token ? JSON.parse(token) : "";
-    } catch (error) {
-      parsedToken = token || "";
+    // Evita conexoes anonimas que so geram 401/403 e ruido de sessao expirada no logout.
+    if (!parsedToken) {
+      return openSocket(getBackendUrl(), {
+        autoConnect: false,
+        transports: ["websocket", "polling"]
+      });
     }
 
     return openSocket(getBackendUrl(), {
       transports: ["websocket", "polling"],
       query: {
-        token: parsedToken,
-      },
+        token: parsedToken
+      }
     });
 }
 

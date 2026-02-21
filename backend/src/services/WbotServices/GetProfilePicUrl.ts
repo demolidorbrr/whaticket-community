@@ -1,11 +1,16 @@
 import GetDefaultWhatsApp from "../../helpers/GetDefaultWhatsApp";
 import { whatsappProvider } from "../../providers/WhatsApp";
 
-const GetProfilePicUrl = async (number: string): Promise<string> => {
-  const defaultWhatsapp = await GetDefaultWhatsApp();
+const GetProfilePicUrl = async (
+  number: string,
+  whatsappId?: number
+): Promise<string> => {
+  const selectedWhatsapp = whatsappId
+    ? { id: whatsappId }
+    : await GetDefaultWhatsApp();
 
   const profilePicUrl = await whatsappProvider.getProfilePicUrl(
-    defaultWhatsapp.id,
+    selectedWhatsapp.id,
     number
   );
 

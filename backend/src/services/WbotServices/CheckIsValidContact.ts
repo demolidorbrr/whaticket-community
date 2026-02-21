@@ -2,12 +2,17 @@ import AppError from "../../errors/AppError";
 import GetDefaultWhatsApp from "../../helpers/GetDefaultWhatsApp";
 import { whatsappProvider } from "../../providers/WhatsApp";
 
-const CheckIsValidContact = async (number: string): Promise<void> => {
-  const defaultWhatsapp = await GetDefaultWhatsApp();
+const CheckIsValidContact = async (
+  number: string,
+  whatsappId?: number
+): Promise<void> => {
+  const selectedWhatsapp = whatsappId
+    ? { id: whatsappId }
+    : await GetDefaultWhatsApp();
 
   try {
     const isValidNumber = await whatsappProvider.checkNumber(
-      defaultWhatsapp.id,
+      selectedWhatsapp.id,
       number
     );
     if (!isValidNumber) {
