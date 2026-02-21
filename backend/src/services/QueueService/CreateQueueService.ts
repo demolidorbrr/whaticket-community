@@ -11,9 +11,31 @@ interface QueueData {
   aiEnabled?: boolean;
   aiMode?: string;
   aiAutoReply?: boolean;
-  aiPrompt?: string;
-  aiWebhookUrl?: string;
+  aiPrompt?: string | null;
+  aiWebhookUrl?: string | null;
 }
+
+const parseBoolean = (value: unknown, fallback = false): boolean => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "enabled", "sim", "yes"].includes(normalized)) {
+      return true;
+    }
+    if (["false", "0", "disabled", "nao", "não", "no"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  if (typeof value === "number") {
+    return value > 0;
+  }
+
+  return fallback;
+};
 
 const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {
   const tenantContext = getTenantContext();
@@ -29,6 +51,9 @@ const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {
 
   const normalizedQueueData = {
     ...queueData,
+    // Normalize booleans to avoid "true"/"false" strings being persisted as false.
+    aiEnabled: parseBoolean(queueData.aiEnabled, false),
+    aiAutoReply: parseBoolean(queueData.aiAutoReply, false),
     aiWebhookUrl: queueData.aiWebhookUrl?.trim() || null,
     aiPrompt: queueData.aiPrompt?.trim() || null
   };

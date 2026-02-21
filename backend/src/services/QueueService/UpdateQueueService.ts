@@ -11,19 +11,62 @@ interface QueueData {
   aiEnabled?: boolean;
   aiMode?: string;
   aiAutoReply?: boolean;
-  aiPrompt?: string;
-  aiWebhookUrl?: string;
+  aiPrompt?: string | null;
+  aiWebhookUrl?: string | null;
 }
+
+const parseOptionalBoolean = (
+  value: unknown
+): boolean | undefined => {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "enabled", "sim", "yes"].includes(normalized)) {
+      return true;
+    }
+    if (["false", "0", "disabled", "nao", "não", "no"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  if (typeof value === "number") {
+    return value > 0;
+  }
+
+  return undefined;
+};
 
 const UpdateQueueService = async (
   queueId: number | string,
   queueData: QueueData
 ): Promise<Queue> => {
-  const normalizedQueueData = {
+  const normalizedAiEnabled = parseOptionalBoolean(queueData.aiEnabled);
+  const normalizedAiAutoReply = parseOptionalBoolean(queueData.aiAutoReply);
+
+  const normalizedQueueData: QueueData = {
     ...queueData,
-    aiWebhookUrl: queueData.aiWebhookUrl?.trim() || null,
-    aiPrompt: queueData.aiPrompt?.trim() || null
+    // Normalize booleans to avoid "true"/"false" strings being persisted as false.
+    aiEnabled: normalizedAiEnabled,
+    aiAutoReply:
+      normalizedAiEnabled === false
+        ? false
+        : normalizedAiAutoReply
   };
+
+  if (Object.prototype.hasOwnProperty.call(queueData, "aiWebhookUrl")) {
+    normalizedQueueData.aiWebhookUrl = queueData.aiWebhookUrl?.trim() || null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(queueData, "aiPrompt")) {
+    normalizedQueueData.aiPrompt = queueData.aiPrompt?.trim() || null;
+  }
 
   const { color, name, aiMode, aiWebhookUrl } = normalizedQueueData;
 
@@ -45,7 +88,6 @@ const UpdateQueueService = async (
         }
       ),
     color: Yup.string()
-      .required("ERR_QUEUE_INVALID_COLOR")
       .test("Check-color", "ERR_QUEUE_INVALID_COLOR", async value => {
         if (value) {
           const colorTestRegex = /^#[0-9a-f]{3,6}$/i;
