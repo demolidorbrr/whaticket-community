@@ -138,6 +138,10 @@ const Queues = () => {
     setSelectedQueue(null);
   };
 
+  const handleQueueSaved = (queue) => {
+    dispatch({ type: "UPDATE_QUEUES", payload: queue });
+  };
+
   const handleEditQueue = (queue) => {
     setSelectedQueue(queue);
     setQueueModalOpen(true);
@@ -177,6 +181,7 @@ const Queues = () => {
         open={queueModalOpen}
         onClose={handleCloseQueueModal}
         queueId={selectedQueue?.id}
+        onSaved={handleQueueSaved}
       />
       <MainHeader>
         <Title>{i18n.t("queues.title")}</Title>

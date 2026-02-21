@@ -72,7 +72,7 @@ const QueueSchema = Yup.object().shape({
 	aiWebhookUrl: Yup.string().url("URL invalida").nullable().notRequired(),
 });
 
-const QueueModal = ({ open, onClose, queueId }) => {
+const QueueModal = ({ open, onClose, queueId, onSaved }) => {
 	const classes = useStyles();
 
 	const initialState = {
@@ -96,7 +96,16 @@ const QueueModal = ({ open, onClose, queueId }) => {
 			try {
 				const { data } = await api.get(`/queue/${queueId}`);
 				setQueue(prevState => {
-					return { ...prevState, ...data };
+					// Normaliza tipos vindos da API (0/1, null) para o estado do formulario.
+					return {
+						...prevState,
+						...data,
+						aiEnabled: Boolean(data.aiEnabled),
+						aiAutoReply: Boolean(data.aiAutoReply),
+						aiMode: data.aiMode || "triage",
+						aiPrompt: data.aiPrompt || "",
+						aiWebhookUrl: data.aiWebhookUrl || "",
+					};
 				});
 			} catch (err) {
 				toastError(err);
@@ -104,16 +113,7 @@ const QueueModal = ({ open, onClose, queueId }) => {
 		})();
 
 		return () => {
-			setQueue({
-				name: "",
-					color: "#1976d2",
-				greetingMessage: "",
-				aiEnabled: false,
-				aiMode: "triage",
-				aiAutoReply: false,
-				aiPrompt: "",
-				aiWebhookUrl: "",
-			});
+			setQueue(initialState);
 		};
 	}, [queueId, open]);
 
@@ -123,12 +123,33 @@ const QueueModal = ({ open, onClose, queueId }) => {
 	};
 
 	const handleSaveQueue = async values => {
+		// Garante payload consistente para backend e evita "desativacao fantasma".
+		const payload = {
+			...values,
+			name: values.name?.trim(),
+			color: values.color,
+			greetingMessage: values.greetingMessage || "",
+			aiEnabled: Boolean(values.aiEnabled),
+			aiMode: values.aiMode || "triage",
+			aiAutoReply: Boolean(values.aiEnabled) ? Boolean(values.aiAutoReply) : false,
+			aiPrompt: values.aiPrompt ?? "",
+			aiWebhookUrl: values.aiWebhookUrl ?? "",
+		};
+
 		try {
+			let savedQueue;
 			if (queueId) {
-				await api.put(`/queue/${queueId}`, values);
+				const { data } = await api.put(`/queue/${queueId}`, payload);
+				savedQueue = data;
 			} else {
-				await api.post("/queue", values);
+				const { data } = await api.post("/queue", payload);
+				savedQueue = data;
 			}
+
+			if (typeof onSaved === "function" && savedQueue) {
+				onSaved(savedQueue);
+			}
+
 			toast.success("Queue saved successfully");
 			handleClose();
 		} catch (err) {
