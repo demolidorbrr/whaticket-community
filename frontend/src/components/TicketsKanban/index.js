@@ -120,6 +120,8 @@ const STATUS_COLUMNS = [
   { key: "closed", label: "Fechado", type: "status", status: "closed" }
 ];
 
+const MAX_KANBAN_PAGES = 100;
+
 const upsertTicket = (list, ticket) => {
   const index = list.findIndex(item => item.id === ticket.id);
   if (index >= 0) {
@@ -130,6 +132,8 @@ const upsertTicket = (list, ticket) => {
 
   return [ticket, ...list];
 };
+
+const isGroupTicket = ticket => Boolean(ticket?.isGroup);
 
 const TicketsKanban = ({
   showAll,
@@ -255,47 +259,58 @@ const TicketsKanban = ({
     try {
       setLoading(true);
 
+      // Carrega todas as paginas por status para o Kanban refletir o mesmo universo da listagem.
+      const loadTicketsByStatus = async ({ status, statusShowAll }) => {
+        const allTickets = [];
+        let currentPage = 1;
+        let hasMore = true;
+
+        while (hasMore && currentPage <= MAX_KANBAN_PAGES) {
+          const { data } = await api.get("/tickets", {
+            params: {
+              status,
+              showAll: statusShowAll,
+              queueIds,
+              pageNumber: currentPage
+            }
+          });
+
+          allTickets.push(...(data.tickets || []));
+          hasMore = Boolean(data.hasMore);
+          currentPage += 1;
+        }
+
+        return allTickets;
+      };
+
       const [pendingRes, openRes, closedRes] = await Promise.all([
-        api.get("/tickets", {
-          params: {
-            status: "pending",
-            showAll,
-            queueIds,
-            pageNumber: 1
-          }
+        loadTicketsByStatus({
+          status: "pending",
+          statusShowAll: showAll
         }),
-        api.get("/tickets", {
-          params: {
-            status: "open",
-            showAll,
-            queueIds,
-            pageNumber: 1
-          }
+        loadTicketsByStatus({
+          status: "open",
+          statusShowAll: showAll
         }),
-        api.get("/tickets", {
-          params: {
-            status: "closed",
-            showAll: true,
-            queueIds,
-            pageNumber: 1
-          }
+        loadTicketsByStatus({
+          status: "closed",
+          statusShowAll: true
         })
       ]);
 
       const merged = [
-        ...(pendingRes.data.tickets || []),
-        ...(openRes.data.tickets || []),
-        ...(closedRes.data.tickets || [])
+        ...pendingRes,
+        ...openRes,
+        ...closedRes
       ];
 
-      const unique = merged.reduce((acc, item) => {
-        if (!acc.some(ticket => ticket.id === item.id)) {
-          acc.push(item);
-        }
-        return acc;
-      }, []);
+      const uniqueById = new Map();
+      merged.forEach(ticket => {
+        uniqueById.set(ticket.id, ticket);
+      });
 
-      setTickets(unique);
+      // Kanban trabalha apenas com contatos individuais; grupos nao entram no fluxo de filas.
+      setTickets(Array.from(uniqueById.values()).filter(ticket => !isGroupTicket(ticket)));
     } catch (err) {
       toastError(err);
     } finally {
@@ -324,12 +339,21 @@ const TicketsKanban = ({
       }
 
       if (data.action === "update" && data.ticket) {
+        if (isGroupTicket(data.ticket)) {
+          setTickets(prev => prev.filter(ticket => ticket.id !== data.ticket.id));
+          return;
+        }
+
         setTickets(prev => upsertTicket(prev, data.ticket));
       }
     });
 
     socket.on("appMessage", data => {
       if (data.action === "create" && data.ticket) {
+        if (isGroupTicket(data.ticket)) {
+          return;
+        }
+
         setTickets(prev => upsertTicket(prev, data.ticket));
       }
     });
@@ -383,6 +407,10 @@ const TicketsKanban = ({
 
     const sourceTicket = tickets.find(ticket => ticket.id === ticketId);
     if (!sourceTicket) {
+      return;
+    }
+
+    if (isGroupTicket(sourceTicket)) {
       return;
     }
 

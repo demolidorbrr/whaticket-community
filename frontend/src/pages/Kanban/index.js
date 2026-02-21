@@ -43,7 +43,8 @@ const useStyles = makeStyles(theme => ({
 const Kanban = () => {
   const classes = useStyles();
   const { user } = useContext(AuthContext);
-  const isAdmin = user.profile?.toUpperCase() === "ADMIN";
+  const profile = user.profile?.toUpperCase();
+  const canManageBoard = profile === "ADMIN" || profile === "SUPERADMIN";
   const userQueueIds = useMemo(
     () => (user?.queues || []).map(queue => queue.id),
     [user?.queues]
@@ -53,14 +54,24 @@ const Kanban = () => {
   const [queueModalOpen, setQueueModalOpen] = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [selectedQueue, setSelectedQueue] = useState(null);
-  const [showAllTickets, setShowAllTickets] = useState(isAdmin);
+  const [showAllTickets, setShowAllTickets] = useState(false);
   const [availableQueues, setAvailableQueues] = useState(user?.queues || []);
-  const [selectedQueueIds, setSelectedQueueIds] = useState(
-    isAdmin ? [] : userQueueIds
-  );
+  const [selectedQueueIds, setSelectedQueueIds] = useState([]);
 
   useEffect(() => {
-    if (!isAdmin) {
+    // Mantem o estado inicial alinhado com o perfil apos o user carregar no contexto.
+    if (canManageBoard) {
+      setShowAllTickets(true);
+      setSelectedQueueIds([]);
+      return;
+    }
+
+    setShowAllTickets(false);
+    setSelectedQueueIds(userQueueIds);
+  }, [canManageBoard, userQueueIds]);
+
+  useEffect(() => {
+    if (!canManageBoard) {
       setAvailableQueues(user?.queues || []);
       return;
     }
@@ -75,7 +86,7 @@ const Kanban = () => {
     };
 
     loadQueues();
-  }, [isAdmin, user?.queues]);
+  }, [canManageBoard, user?.queues]);
 
   useEffect(() => {
     const socket = openSocket();
@@ -174,7 +185,7 @@ const Kanban = () => {
       <MainHeader>
         <Title>Kanban</Title>
         <MainHeaderButtonsWrapper>
-          {isAdmin ? (
+          {canManageBoard ? (
             <Button
               variant="outlined"
               color="primary"
@@ -194,7 +205,7 @@ const Kanban = () => {
       </MainHeader>
 
       <Paper className={classes.controls} variant="outlined">
-        {isAdmin ? (
+        {canManageBoard ? (
           <FormControlLabel
             label={i18n.t("tickets.buttons.showAll")}
             labelPlacement="start"
@@ -225,7 +236,7 @@ const Kanban = () => {
           queues={availableQueues}
           showAll={showAllTickets}
           selectedQueueIds={selectedQueueIds}
-          canManageQueues={isAdmin}
+          canManageQueues={canManageBoard}
           onEditQueue={handleEditQueue}
           onDeleteQueue={handleAskDeleteQueue}
         />
