@@ -1,4 +1,4 @@
-﻿import * as Yup from "yup";
+import * as Yup from "yup";
 import { Op } from "sequelize";
 
 import AppError from "../../errors/AppError";
@@ -38,8 +38,22 @@ const CreateUserService = async ({
   companyId
 }: Request): Promise<Response> => {
   const tenantContext = getTenantContext();
+  const isSuperAdmin = tenantContext?.profile === "superadmin";
+
+  // Multi-tenant guard: admin cannot force user creation in another company.
+  if (
+    tenantContext?.companyId &&
+    !isSuperAdmin &&
+    companyId &&
+    companyId !== tenantContext.companyId
+  ) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
+
   const resolvedCompanyId =
-    companyId || tenantContext?.companyId || (await GetDefaultCompanyIdService());
+    !isSuperAdmin && tenantContext?.companyId
+      ? tenantContext.companyId
+      : companyId || tenantContext?.companyId || (await GetDefaultCompanyIdService());
 
   const schema = Yup.object().shape({
     name: Yup.string().required().min(2),

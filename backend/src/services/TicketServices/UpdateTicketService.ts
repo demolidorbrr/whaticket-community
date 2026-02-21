@@ -1,4 +1,4 @@
-﻿import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
+import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
 import SetTicketMessagesAsRead from "../../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../../libs/socket";
 import {
@@ -7,6 +7,7 @@ import {
   getCompanyTicketRoom
 } from "../../libs/socketRooms";
 import Ticket from "../../models/Ticket";
+import { logger } from "../../utils/logger";
 import ShowTicketService from "./ShowTicketService";
 import LogTicketEventService from "./LogTicketEventService";
 
@@ -111,20 +112,21 @@ const UpdateTicketService = async ({
     });
   }
 
-  const io = getIO();
   const companyId = updatedTicket.companyId;
-  const oldStatusRoomName = companyId
-    ? getCompanyStatusRoom(companyId, oldStatus)
-    : oldStatus;
-  const updatedStatusRoomName = companyId
-    ? getCompanyStatusRoom(companyId, updatedTicket.status)
-    : updatedTicket.status;
-  const notificationRoomName = companyId
-    ? getCompanyNotificationRoom(companyId)
-    : "notification";
-  const ticketRoomName = companyId
-    ? getCompanyTicketRoom(companyId, ticketId)
-    : ticketId.toString();
+  if (!companyId) {
+    // Security hardening: avoid emitting ticket updates without tenant scope.
+    logger.warn({
+      info: "Skipping ticket update socket emit without companyId",
+      ticketId: updatedTicket.id
+    });
+    return { ticket: updatedTicket, oldStatus, oldUserId };
+  }
+
+  const io = getIO();
+  const oldStatusRoomName = getCompanyStatusRoom(companyId, oldStatus);
+  const updatedStatusRoomName = getCompanyStatusRoom(companyId, updatedTicket.status);
+  const notificationRoomName = getCompanyNotificationRoom(companyId);
+  const ticketRoomName = getCompanyTicketRoom(companyId, ticketId);
 
   if (
     updatedTicket.status !== oldStatus ||

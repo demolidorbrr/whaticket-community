@@ -1,10 +1,11 @@
-﻿import { Request, Response } from "express";
+import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
 import {
   getCompanyNotificationRoom,
   getCompanyStatusRoom,
   getCompanyTicketRoom
 } from "../libs/socketRooms";
+import { logger } from "../utils/logger";
 
 import CreateTicketService from "../services/TicketServices/CreateTicketService";
 import DeleteTicketService from "../services/TicketServices/DeleteTicketService";
@@ -73,15 +74,21 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   const ticket = await CreateTicketService({ contactId, status, userId });
 
-  const io = getIO();
-  const statusRoomName = ticket.companyId
-    ? getCompanyStatusRoom(ticket.companyId, ticket.status)
-    : ticket.status;
+  if (ticket.companyId) {
+    const io = getIO();
+    const statusRoomName = getCompanyStatusRoom(ticket.companyId, ticket.status);
 
-  io.to(statusRoomName).emit("ticket", {
-    action: "update",
-    ticket
-  });
+    io.to(statusRoomName).emit("ticket", {
+      action: "update",
+      ticket
+    });
+  } else {
+    // Security hardening: avoid broadcasting ticket updates without tenant scope.
+    logger.warn({
+      info: "Skipping ticket socket emit without companyId",
+      ticketId: ticket.id
+    });
+  }
 
   return res.status(200).json(ticket);
 };
@@ -131,24 +138,25 @@ export const remove = async (
 
   const ticket = await DeleteTicketService(ticketId);
 
-  const io = getIO();
-  const statusRoomName = ticket.companyId
-    ? getCompanyStatusRoom(ticket.companyId, ticket.status)
-    : ticket.status;
-  const ticketRoomName = ticket.companyId
-    ? getCompanyTicketRoom(ticket.companyId, ticketId)
-    : ticketId;
-  const notificationRoomName = ticket.companyId
-    ? getCompanyNotificationRoom(ticket.companyId)
-    : "notification";
+  if (ticket.companyId) {
+    const io = getIO();
+    const statusRoomName = getCompanyStatusRoom(ticket.companyId, ticket.status);
+    const ticketRoomName = getCompanyTicketRoom(ticket.companyId, ticketId);
+    const notificationRoomName = getCompanyNotificationRoom(ticket.companyId);
 
-  io.to(statusRoomName)
-    .to(ticketRoomName)
-    .to(notificationRoomName)
-    .emit("ticket", {
-      action: "delete",
-      ticketId: +ticketId
+    io.to(statusRoomName)
+      .to(ticketRoomName)
+      .to(notificationRoomName)
+      .emit("ticket", {
+        action: "delete",
+        ticketId: +ticketId
+      });
+  } else {
+    logger.warn({
+      info: "Skipping ticket delete socket emit without companyId",
+      ticketId
     });
+  }
 
   return res.status(200).json({ message: "ticket deleted" });
 };

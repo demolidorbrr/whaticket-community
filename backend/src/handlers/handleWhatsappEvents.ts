@@ -1,4 +1,4 @@
-﻿import { join } from "path";
+import { join } from "path";
 import { promisify } from "util";
 import { writeFile } from "fs";
 import * as Sentry from "@sentry/node";
@@ -233,12 +233,24 @@ const processVcardMessage = async (
 };
 
 const resolveQuotedMessageId = async (
-  quotedMsgId?: string
+  quotedMsgId: string | undefined,
+  whatsappId: number
 ): Promise<string | undefined> => {
   if (!quotedMsgId) return undefined;
 
-  const quotedMessage = await Message.findByPk(quotedMsgId, {
-    attributes: ["id"]
+  // Security hardening: quoted messages must belong to the same WhatsApp session.
+  const quotedMessage = await Message.findOne({
+    where: { id: quotedMsgId },
+    attributes: ["id"],
+    include: [
+      {
+        model: Ticket,
+        as: "ticket",
+        attributes: ["id"],
+        where: { whatsappId },
+        required: true
+      }
+    ]
   });
 
   return quotedMessage ? quotedMsgId : undefined;
@@ -341,12 +353,24 @@ export const handleMessage = async (
       try {
     const processedMessage = processLocationMessage(messagePayload);
     const resolvedQuotedMsgId = await resolveQuotedMessageId(
-      processedMessage.quotedMsgId
+      processedMessage.quotedMsgId,
+      contextPayload.whatsappId
     );
     const messageCreatedAt = resolveMessageCreatedAt(processedMessage.timestamp);
 
     if (processedMessage.fromMe) {
-      const existingOutgoingMessage = await Message.findByPk(processedMessage.id);
+      const existingOutgoingMessage = await Message.findOne({
+        where: { id: processedMessage.id },
+        include: [
+          {
+            model: Ticket,
+            as: "ticket",
+            attributes: ["id"],
+            where: { whatsappId: contextPayload.whatsappId },
+            required: true
+          }
+        ]
+      });
 
       if (existingOutgoingMessage) {
         const messageData: any = {
@@ -541,9 +565,19 @@ export const handleMessageAck = async (
     await messageToUpdate.update({ ack: mergedAck });
 
     const ticketCompanyId = messageToUpdate.ticket?.companyId;
-    const ticketRoomName = ticketCompanyId
-      ? getCompanyTicketRoom(ticketCompanyId, messageToUpdate.ticketId)
-      : messageToUpdate.ticketId.toString();
+    if (!ticketCompanyId) {
+      // Security hardening: avoid ACK emits without tenant scope.
+      logger.warn({
+        info: "Skipping message ACK socket emit without companyId",
+        messageId
+      });
+      return;
+    }
+
+    const ticketRoomName = getCompanyTicketRoom(
+      ticketCompanyId,
+      messageToUpdate.ticketId
+    );
 
     io.to(ticketRoomName).emit("appMessage", {
       action: "update",

@@ -1,4 +1,4 @@
-﻿import { Server as SocketIO } from "socket.io";
+import { Server as SocketIO } from "socket.io";
 import { Server } from "http";
 import { verify } from "jsonwebtoken";
 import AppError from "../errors/AppError";
@@ -41,37 +41,29 @@ export const initIO = (httpServer: Server): SocketIO => {
 
     const companyId = Number(tokenData.companyId || 0);
 
-    if (companyId > 0) {
-      socket.join(getCompanyRoom(companyId));
+    if (companyId <= 0) {
+      // Security hardening: reject socket sessions without tenant scope.
+      socket.disconnect();
+      return io;
     }
+
+    socket.join(getCompanyRoom(companyId));
 
     logger.info("Client Connected");
 
     socket.on("joinChatBox", (ticketId: string) => {
       logger.info("A client joined a ticket channel");
-
-      const roomName =
-        companyId > 0 ? getCompanyTicketRoom(companyId, ticketId) : ticketId;
-
-      socket.join(roomName);
+      socket.join(getCompanyTicketRoom(companyId, ticketId));
     });
 
     socket.on("joinNotification", () => {
       logger.info("A client joined notification channel");
-
-      const roomName =
-        companyId > 0 ? getCompanyNotificationRoom(companyId) : "notification";
-
-      socket.join(roomName);
+      socket.join(getCompanyNotificationRoom(companyId));
     });
 
     socket.on("joinTickets", (status: string) => {
       logger.info(`A client joined to ${status} tickets channel.`);
-
-      const roomName =
-        companyId > 0 ? getCompanyStatusRoom(companyId, status) : status;
-
-      socket.join(roomName);
+      socket.join(getCompanyStatusRoom(companyId, status));
     });
 
     socket.on("disconnect", () => {

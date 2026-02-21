@@ -1,4 +1,4 @@
-﻿import { getIO } from "../../libs/socket";
+import { getIO } from "../../libs/socket";
 import {
   getCompanyNotificationRoom,
   getCompanyStatusRoom,
@@ -8,6 +8,7 @@ import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
 import User from "../../models/User";
+import { logger } from "../../utils/logger";
 
 interface MessageData {
   id: string;
@@ -70,17 +71,21 @@ const CreateMessageService = async ({
     lastMessageAtTs: new Date(message.createdAt).getTime()
   };
 
-  const io = getIO();
   const companyId = message.ticket.companyId;
-  const ticketRoomName = companyId
-    ? getCompanyTicketRoom(companyId, message.ticketId)
-    : message.ticketId.toString();
-  const statusRoomName = companyId
-    ? getCompanyStatusRoom(companyId, message.ticket.status)
-    : message.ticket.status;
-  const notificationRoomName = companyId
-    ? getCompanyNotificationRoom(companyId)
-    : "notification";
+  if (!companyId) {
+    // Security hardening: never emit message events without tenant scope.
+    logger.warn({
+      info: "Skipping appMessage emit without companyId",
+      messageId: message.id,
+      ticketId: message.ticketId
+    });
+    return message;
+  }
+
+  const io = getIO();
+  const ticketRoomName = getCompanyTicketRoom(companyId, message.ticketId);
+  const statusRoomName = getCompanyStatusRoom(companyId, message.ticket.status);
+  const notificationRoomName = getCompanyNotificationRoom(companyId);
 
   io.to(ticketRoomName)
     .to(statusRoomName)

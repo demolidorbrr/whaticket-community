@@ -1,5 +1,6 @@
-﻿import { getIO } from "../libs/socket";
+import { getIO } from "../libs/socket";
 import { getCompanyRoom } from "../libs/socketRooms";
+import { logger } from "../utils/logger";
 
 export const emitByCompany = (
   companyId: number | undefined,
@@ -8,11 +9,15 @@ export const emitByCompany = (
 ): void => {
   const io = getIO();
 
-  if (companyId) {
-    io.to(getCompanyRoom(companyId)).emit(eventName, payload);
+  if (!companyId) {
+    // Security hardening: never fallback to global broadcast in multi-tenant mode.
+    logger.warn({
+      info: "Skipping socket emit without company scope",
+      eventName
+    });
     return;
   }
 
-  io.emit(eventName, payload);
+  io.to(getCompanyRoom(companyId)).emit(eventName, payload);
 };
 

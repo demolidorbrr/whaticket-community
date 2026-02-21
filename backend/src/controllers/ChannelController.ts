@@ -8,6 +8,7 @@ import FindOrCreateTicketService from "../services/TicketServices/FindOrCreateTi
 import ProcessQueueAssistantService from "../services/AIServices/ProcessQueueAssistantService";
 import StartTicketSLAService from "../services/SLAServices/StartTicketSLAService";
 import GetDefaultWhatsApp from "../helpers/GetDefaultWhatsApp";
+import { runWithTenantContext } from "../libs/tenantContext";
 
 type ChannelName = "whatsapp" | "instagram" | "messenger" | "webchat";
 
@@ -44,11 +45,14 @@ export const inbound = async (
   res: Response
 ): Promise<Response> => {
   const expectedToken = process.env.CHANNEL_WEBHOOK_TOKEN;
-  if (expectedToken) {
-    const incomingToken = getTokenFromRequest(req);
-    if (!incomingToken || incomingToken !== expectedToken) {
-      throw new AppError("ERR_CHANNEL_UNAUTHORIZED", 401);
-    }
+  if (!expectedToken) {
+    // Security hardening: refuse inbound channel traffic without explicit secret.
+    throw new AppError("ERR_CHANNEL_TOKEN_NOT_CONFIGURED", 503);
+  }
+
+  const incomingToken = getTokenFromRequest(req);
+  if (!incomingToken || incomingToken !== expectedToken) {
+    throw new AppError("ERR_CHANNEL_UNAUTHORIZED", 401);
   }
 
   const payload = req.body as InboundPayload;
@@ -94,69 +98,87 @@ export const inbound = async (
     throw new AppError("ERR_NO_DEF_WAPP_FOUND", 404);
   }
 
-  const contactNumber = isWhatsApp
-    ? String(identity)
-    : `${channel}:${String(identity)}`;
+  if (!whatsapp.companyId) {
+    throw new AppError("ERR_NO_COMPANY_FOUND", 403);
+  }
 
-  const contact = await CreateOrUpdateContactService({
-    name: payload.name || String(identity),
-    number: contactNumber,
-    profilePicUrl: payload.profilePicUrl,
-    isGroup: false,
-    keepNumberFormat: !isWhatsApp
-  });
+  const selectedWhatsapp = whatsapp;
 
-  const ticket = await FindOrCreateTicketService(contact, whatsapp.id, 1);
-  await ticket.update({
-    channel,
-    queueId: payload.queueId || ticket.queueId,
-    lastMessage: payload.body
-  });
+  const result = await runWithTenantContext(
+    {
+      companyId: selectedWhatsapp.companyId,
+      profile: "api"
+    },
+    async () => {
+      const contactNumber = isWhatsApp
+        ? String(identity)
+        : `${channel}:${String(identity)}`;
 
-  await StartTicketSLAService(ticket, "omnichannel");
+      const contact = await CreateOrUpdateContactService({
+        name: payload.name || String(identity),
+        number: contactNumber,
+        profilePicUrl: payload.profilePicUrl,
+        isGroup: false,
+        keepNumberFormat: !isWhatsApp
+      });
 
-  const messageId = payload.messageId || makeMessageId(channel);
+      const ticket = await FindOrCreateTicketService(contact, selectedWhatsapp.id, 1);
+      await ticket.update({
+        channel,
+        queueId: payload.queueId || ticket.queueId,
+        lastMessage: payload.body
+      });
 
-  await CreateMessageService({
-    messageData: {
-      id: messageId,
-      ticketId: ticket.id,
-      contactId: contact.id,
-      body: payload.body,
-      fromMe: false,
-      read: false,
-      mediaType: "chat",
-      ack: 0
+      await StartTicketSLAService(ticket, "omnichannel");
+
+      const messageId = payload.messageId || makeMessageId(channel);
+
+      await CreateMessageService({
+        messageData: {
+          id: messageId,
+          ticketId: ticket.id,
+          contactId: contact.id,
+          body: payload.body,
+          fromMe: false,
+          read: false,
+          mediaType: "chat",
+          ack: 0
+        }
+      });
+
+      await ProcessQueueAssistantService({
+        ticket,
+        messagePayload: {
+          id: messageId,
+          body: payload.body,
+          fromMe: false,
+          hasMedia: false,
+          type: "chat",
+          timestamp: Date.now(),
+          from: String(identity),
+          to: "inbox",
+          ack: 0
+        },
+        contactPayload: {
+          name: contact.name,
+          number: contact.number,
+          lid: contact.lid,
+          profilePicUrl: contact.profilePicUrl,
+          isGroup: false
+        },
+        whatsappId: selectedWhatsapp.id
+      });
+
+      return {
+        ticketId: ticket.id,
+        messageId
+      };
     }
-  });
-
-  await ProcessQueueAssistantService({
-    ticket,
-    messagePayload: {
-      id: messageId,
-      body: payload.body,
-      fromMe: false,
-      hasMedia: false,
-      type: "chat",
-      timestamp: Date.now(),
-      from: String(identity),
-      to: "inbox",
-      ack: 0
-    },
-    contactPayload: {
-      name: contact.name,
-      number: contact.number,
-      lid: contact.lid,
-      profilePicUrl: contact.profilePicUrl,
-      isGroup: false
-    },
-    whatsappId: whatsapp.id
-  });
+  );
 
   return res.status(200).json({
     success: true,
-    ticketId: ticket.id,
-    messageId
+    ...result
   });
 };
 

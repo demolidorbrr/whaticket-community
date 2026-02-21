@@ -1,17 +1,29 @@
 import AppError from "../../errors/AppError";
+import { getTenantContext } from "../../libs/tenantContext";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import { whatsappProvider } from "../../providers/WhatsApp";
 
 const DeleteWhatsAppMessage = async (messageId: string): Promise<Message> => {
-  const message = await Message.findByPk(messageId, {
-    include: [
-      {
-        model: Ticket,
-        as: "ticket",
-        include: ["contact"]
-      }
-    ]
+  const tenantContext = getTenantContext();
+  const ticketInclude: Record<string, any> = {
+    model: Ticket,
+    as: "ticket",
+    include: ["contact"]
+  };
+
+  if (
+    tenantContext?.companyId &&
+    tenantContext.profile !== "superadmin"
+  ) {
+    // Multi-tenant guard: authenticated users can only delete messages from their company.
+    ticketInclude.where = { companyId: tenantContext.companyId };
+    ticketInclude.required = true;
+  }
+
+  const message = await Message.findOne({
+    where: { id: messageId },
+    include: [ticketInclude]
   });
 
   if (!message) {
@@ -35,3 +47,4 @@ const DeleteWhatsAppMessage = async (messageId: string): Promise<Message> => {
 };
 
 export default DeleteWhatsAppMessage;
+

@@ -1,9 +1,10 @@
-﻿import { Request, Response } from "express";
+import { Request, Response } from "express";
 
 import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../libs/socket";
 import { getCompanyTicketRoom } from "../libs/socketRooms";
 import Message from "../models/Message";
+import { logger } from "../utils/logger";
 
 import ListMessagesService from "../services/MessageServices/ListMessagesService";
 import CreateMessageService from "../services/MessageServices/CreateMessageService";
@@ -111,14 +112,21 @@ export const remove = async (
 
   const message = await DeleteWhatsAppMessage(messageId);
 
-  const io = getIO();
-  const ticketRoomName = message.ticket?.companyId
-    ? getCompanyTicketRoom(message.ticket.companyId, message.ticketId)
-    : message.ticketId.toString();
-  io.to(ticketRoomName).emit("appMessage", {
-    action: "update",
-    message
-  });
+  const companyId = message.ticket?.companyId;
+  if (companyId) {
+    const io = getIO();
+    const ticketRoomName = getCompanyTicketRoom(companyId, message.ticketId);
+    io.to(ticketRoomName).emit("appMessage", {
+      action: "update",
+      message
+    });
+  } else {
+    // Security hardening: never emit message updates to non-tenant rooms.
+    logger.warn({
+      info: "Skipping message socket emit without companyId",
+      messageId
+    });
+  }
 
   return res.send();
 };

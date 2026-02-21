@@ -1,10 +1,11 @@
-﻿import { Op } from "sequelize";
+import { Op } from "sequelize";
 import { getIO } from "../../libs/socket";
 import {
   getCompanyNotificationRoom,
   getCompanyStatusRoom
 } from "../../libs/socketRooms";
 import Ticket from "../../models/Ticket";
+import { logger } from "../../utils/logger";
 import GetSettingValueService from "../SettingServices/GetSettingValueService";
 import LogTicketEventService from "../TicketServices/LogTicketEventService";
 
@@ -70,12 +71,17 @@ const RunSLAEscalationService = async (): Promise<void> => {
       }
     });
 
-    const statusRoomName = ticket.companyId
-      ? getCompanyStatusRoom(ticket.companyId, "pending")
-      : "pending";
-    const notificationRoomName = ticket.companyId
-      ? getCompanyNotificationRoom(ticket.companyId)
-      : "notification";
+    if (!ticket.companyId) {
+      // Security hardening: avoid SLA socket emits without tenant scope.
+      logger.warn({
+        info: "Skipping SLA ticket emit without companyId",
+        ticketId: ticket.id
+      });
+      continue;
+    }
+
+    const statusRoomName = getCompanyStatusRoom(ticket.companyId, "pending");
+    const notificationRoomName = getCompanyNotificationRoom(ticket.companyId);
 
     io.to(statusRoomName).to(notificationRoomName).emit("ticket", {
       action: "update",

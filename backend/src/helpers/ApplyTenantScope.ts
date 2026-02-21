@@ -1,4 +1,4 @@
-﻿import { Op } from "sequelize";
+import { Op } from "sequelize";
 import AppError from "../errors/AppError";
 import { getTenantContext } from "../libs/tenantContext";
 
@@ -11,14 +11,6 @@ type TenantModelInstance = {
 };
 
 const SUPERADMIN_PROFILE = "superadmin";
-
-const hasCompanyConstraint = (where?: Record<string, unknown>): boolean => {
-  if (!where) {
-    return false;
-  }
-
-  return Object.prototype.hasOwnProperty.call(where, "companyId");
-};
 
 export const applyTenantScope = (options?: ScopedOptions): void => {
   const tenantContext = getTenantContext();
@@ -36,10 +28,8 @@ export const applyTenantScope = (options?: ScopedOptions): void => {
     return;
   }
 
-  if (hasCompanyConstraint(options.where)) {
-    return;
-  }
-
+  // Security hardening: always intersect existing filters with tenant company.
+  // This blocks explicit/implicit attempts to bypass tenant isolation.
   options.where = {
     [Op.and]: [{ companyId: tenantContext.companyId }, options.where]
   };
@@ -48,11 +38,19 @@ export const applyTenantScope = (options?: ScopedOptions): void => {
 export const applyTenantScopeToInstance = (
   instance: TenantModelInstance
 ): void => {
+  const tenantContext = getTenantContext();
+
   if (instance.companyId) {
+    if (
+      tenantContext &&
+      tenantContext.profile !== SUPERADMIN_PROFILE &&
+      instance.companyId !== tenantContext.companyId
+    ) {
+      throw new AppError("ERR_NO_PERMISSION", 403);
+    }
+
     return;
   }
-
-  const tenantContext = getTenantContext();
 
   if (!tenantContext?.companyId) {
     throw new AppError("ERR_TENANT_CONTEXT_REQUIRED", 500);
