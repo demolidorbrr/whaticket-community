@@ -25,6 +25,24 @@ Este repositório é mantido por humanos e agentes. O agente deve priorizar:
 - Evite SSRF, path traversal, command injection: sanitize e use libs seguras.
 - Dependências novas: só adicionar se for realmente necessário, e preferir libs já adotadas no repo.
 
+## Regras obrigatorias de multi-empresa (tenant)
+- Nunca remover, desativar ou alterar sem solicitacao explicita os modulos de revenda/superadmin (`Company`, `Plan`, rotas e tela de `Settings` com Empresas/Planos).
+- Nao alterar, limpar, deduplicar, importar, excluir ou reformatar dados/rotinas de `Contacts` sem solicitacao explicita do usuario nesta conversa.
+- Nao alterar o fluxo estabilizado de mensagens WhatsApp (`wwebjs`, eventos `message_create/media_uploaded`, defaults de processamento de `fromMe`, timeouts/fallbacks de contato/chat e `SetTicketMessagesAsRead`) sem solicitacao explicita do usuario nesta conversa.
+- Nao remover/alterar o `autoComplete` de senha em telas/modais de autenticacao e cadastro de usuario sem solicitacao explicita do usuario nesta conversa.
+- Em qualquer endpoint autenticado de dados operacionais (`Users`, `Contacts`, `Tickets`, `Queues`, `Tags`, `Whatsapps`, `QuickAnswers`, `Schedules`), aplicar filtro por `companyId` para perfis nao-superadmin.
+- Em `create/update/delete`, validar que o recurso pertence ao `companyId` da sessao antes de persistir.
+- Nunca executar update/delete em massa sem clausula de tenant (`WHERE companyId = ...`) para perfis nao-superadmin.
+- Em eventos de websocket, emitir apenas em salas da empresa (company room), nunca em broadcast global para dados operacionais.
+- Se adicionar novo model com `companyId`, manter associacao com `Company` e validar escopo de tenant no acesso.
+- Ao editar auth/permissoes, garantir:
+  - `superadmin` pode acessar configuracoes globais (Empresas/Planos);
+  - `admin/user` nao acessam configuracoes globais.
+- Antes de finalizar alteracoes que toquem backend/queries/permissoes, rodar smoke test A/B de tenant e registrar resultado:
+  - Tenant A nao pode visualizar/editar dados do Tenant B.
+  - Tenant B nao pode visualizar/editar dados do Tenant A.
+  - Superadmin acessa Empresas/Planos.
+
 ## Performance e confiabilidade
 - Evite N+1 e loops com chamadas remotas repetidas.
 - Prefira operações idempotentes quando fizer sentido (webhooks, retries).

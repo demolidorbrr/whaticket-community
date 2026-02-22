@@ -48,7 +48,9 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const ticket = await ShowTicketService(ticketId);
   const isWhatsAppChannel = !ticket.channel || ticket.channel === "whatsapp";
 
-  SetTicketMessagesAsRead(ticket);
+  // Do not block outbound send with WhatsApp "seen" sync.
+  // This keeps message submission responsive under session load.
+  SetTicketMessagesAsRead(ticket, { syncSeen: false });
 
   if (medias && medias.length > 0) {
     if (!isWhatsAppChannel) {

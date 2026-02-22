@@ -23,6 +23,7 @@ type IndexQuery = {
   showAll: string;
   withUnreadMessages: string;
   queueIds: string;
+  groupMode?: "all" | "only" | "exclude" | string;
 };
 
 interface TicketData {
@@ -43,7 +44,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     searchParam,
     showAll,
     queueIds: queueIdsStringified,
-    withUnreadMessages
+    withUnreadMessages,
+    groupMode
   } = req.query as IndexQuery;
 
   const userId = req.user.id;
@@ -54,6 +56,9 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     queueIds = JSON.parse(queueIdsStringified);
   }
 
+  const normalizedGroupMode =
+    groupMode === "only" || groupMode === "exclude" ? groupMode : "all";
+
   const { tickets, count, hasMore } = await ListTicketsService({
     searchParam,
     pageNumber,
@@ -62,7 +67,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     showAll,
     userId,
     queueIds,
-    withUnreadMessages
+    withUnreadMessages,
+    groupMode: normalizedGroupMode
   });
 
   return res.status(200).json({ tickets, count, hasMore });

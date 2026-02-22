@@ -96,14 +96,16 @@ const Dashboard = () => {
     status: "open",
     showAll: "true",
     withUnreadMessages: "false",
-    queueIds: JSON.stringify(userQueueIds)
+    queueIds: JSON.stringify(userQueueIds),
+    groupMode: "exclude"
   });
 
   const { count: pendingCount } = useTickets({
     status: "pending",
     showAll: "true",
     withUnreadMessages: "false",
-    queueIds: JSON.stringify(userQueueIds)
+    queueIds: JSON.stringify(userQueueIds),
+    groupMode: "exclude"
   });
 
   const { count: closedCount } = useTickets({

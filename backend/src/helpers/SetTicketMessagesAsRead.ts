@@ -8,7 +8,16 @@ import Ticket from "../models/Ticket";
 import { logger } from "../utils/logger";
 import { whatsappProvider } from "../providers/WhatsApp";
 
-const SetTicketMessagesAsRead = async (ticket: Ticket): Promise<void> => {
+interface SetTicketMessagesAsReadOptions {
+  syncSeen?: boolean;
+}
+
+const SetTicketMessagesAsRead = async (
+  ticket: Ticket,
+  options: SetTicketMessagesAsReadOptions = {}
+): Promise<void> => {
+  const { syncSeen = true } = options;
+
   await Message.update(
     { read: true },
     {
@@ -21,17 +30,19 @@ const SetTicketMessagesAsRead = async (ticket: Ticket): Promise<void> => {
 
   await ticket.update({ unreadMessages: 0 });
 
-  try {
-    if (ticket.whatsappId) {
-      await whatsappProvider.sendSeen(
-        ticket.whatsappId,
-        `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`
+  if (syncSeen) {
+    try {
+      if (ticket.whatsappId) {
+        await whatsappProvider.sendSeen(
+          ticket.whatsappId,
+          `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        `Could not mark messages as read. Maybe whatsapp session disconnected? Err: ${err}`
       );
     }
-  } catch (err) {
-    logger.warn(
-      `Could not mark messages as read. Maybe whatsapp session disconnected? Err: ${err}`
-    );
   }
 
   const companyId = (ticket as any).companyId as number;

@@ -1,11 +1,11 @@
 import { Request, Response, NextFunction } from "express";
 import { verify } from "jsonwebtoken";
-import { Op } from "sequelize";
 
 import AppError from "../errors/AppError";
 import authConfig from "../config/auth";
 import User from "../models/User";
 import Setting from "../models/Setting";
+import Company from "../models/Company";
 import { runWithTenantContext } from "../libs/tenantContext";
 
 interface TokenPayload {
@@ -19,6 +19,16 @@ interface TokenPayload {
 const parseCompanyId = (value: unknown): number | null => {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
+const isLegacyGlobalTokenAllowed = async (): Promise<boolean> => {
+  // Hardening multi-tenant:
+  // token global legado so pode ser aceito quando ha no maximo uma empresa.
+  const activeCompanies = await Company.count({
+    where: { status: "active" }
+  });
+
+  return activeCompanies <= 1;
 };
 
 const isAuthApi = async (
@@ -73,10 +83,19 @@ const isAuthApi = async (
     }
 
     const keyByCompany = `userApiToken:${requestCompanyId}`;
-    const setting = await Setting.findOne({
-      where: { key: { [Op.in]: [keyByCompany, "userApiToken"] }, value: token },
-      order: [["key", "DESC"]]
+    let setting = await Setting.findOne({
+      where: { key: keyByCompany, value: token }
     });
+
+    if (!setting) {
+      const legacyGlobalToken = await Setting.findOne({
+        where: { key: "userApiToken", value: token }
+      });
+
+      if (legacyGlobalToken && (await isLegacyGlobalTokenAllowed())) {
+        setting = legacyGlobalToken;
+      }
+    }
 
     if (!setting) {
       throw new AppError(

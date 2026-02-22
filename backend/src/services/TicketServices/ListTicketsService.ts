@@ -18,6 +18,7 @@ interface Request {
   userId: string;
   withUnreadMessages?: string;
   queueIds: number[];
+  groupMode?: "all" | "only" | "exclude";
 }
 
 interface Response {
@@ -34,7 +35,8 @@ const ListTicketsService = async ({
   date,
   showAll,
   userId,
-  withUnreadMessages
+  withUnreadMessages,
+  groupMode = "all"
 }: Request): Promise<Response> => {
   const user = await ShowUserService(userId);
   const userQueueIds = user.queues.map(queue => queue.id);
@@ -170,6 +172,23 @@ const ListTicketsService = async ({
       ...unreadQueueFilter,
       unreadMessages: { [Op.gt]: 0 }
     };
+  }
+
+  if (status !== "group") {
+    // Mantem alinhamento entre contagens e listas da UI para tickets de contato (nao-grupo).
+    if (groupMode === "exclude") {
+      whereCondition = {
+        ...whereCondition,
+        isGroup: false
+      };
+    }
+
+    if (groupMode === "only") {
+      whereCondition = {
+        ...whereCondition,
+        isGroup: true
+      };
+    }
   }
 
   if (userCompanyId) {

@@ -9,17 +9,23 @@ const adminLikePermissions = [
 	"contacts-page:deleteContact",
 ];
 
+// Admin de tenant nao deve acessar configuracoes globais de revenda.
+const adminPermissions = [...adminLikePermissions];
+
+// Superadmin controla configuracoes globais, incluindo Empresas e Planos.
+const superAdminPermissions = [...adminLikePermissions, "settings-page:view"];
+
 const rules = {
 	user: {
 		static: [],
 	},
 
 	admin: {
-		static: adminLikePermissions,
+		static: adminPermissions,
 	},
 
 	superadmin: {
-		static: adminLikePermissions,
+		static: superAdminPermissions,
 	},
 };
 

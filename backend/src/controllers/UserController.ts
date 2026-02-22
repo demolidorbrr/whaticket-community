@@ -30,13 +30,18 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const { email, password, name, profile, queueIds, whatsappId, companyId } =
     req.body;
+  const isSignupRoute = req.url === "/signup";
 
   if (
-    req.url === "/signup" &&
+    isSignupRoute &&
     (await CheckSettingsHelper("userCreation")) === "disabled"
   ) {
     throw new AppError("ERR_USER_CREATION_DISABLED", 403);
-  } else if (req.url !== "/signup" && req.user.profile !== "admin") {
+  } else if (isSignupRoute) {
+    // Hardening multi-tenant:
+    // cadastro publico sem vinculo confiavel de empresa permite invasao entre tenants.
+    throw new AppError("ERR_SIGNUP_DISABLED_MULTI_TENANT", 403);
+  } else if (req.user.profile !== "admin" && req.user.profile !== "superadmin") {
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
 
