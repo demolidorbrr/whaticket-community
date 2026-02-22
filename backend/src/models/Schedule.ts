@@ -15,6 +15,7 @@ import {
 import Ticket from "./Ticket";
 import Contact from "./Contact";
 import User from "./User";
+import Company from "./Company";
 
 @Table
 class Schedule extends Model<Schedule> {
@@ -23,8 +24,12 @@ class Schedule extends Model<Schedule> {
   @Column
   id: number;
 
+  @ForeignKey(() => Company)
   @Column
   companyId: number;
+
+  @BelongsTo(() => Company)
+  company: Company;
 
   @ForeignKey(() => Ticket)
   @Column

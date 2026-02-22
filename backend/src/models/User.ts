@@ -1,4 +1,4 @@
-﻿import {
+import {
   Table,
   Column,
   CreatedAt,
@@ -62,9 +62,6 @@ class User extends Model<User> {
   @AutoIncrement
   @Column
   id: number;
-
-  @Column
-  companyId: number;
 
   @Column
   name: string;

@@ -1,4 +1,4 @@
-﻿import {
+import {
   Table,
   Column,
   CreatedAt,
@@ -56,9 +56,6 @@ class Tag extends Model<Tag> {
   @AutoIncrement
   @Column
   id: number;
-
-  @Column
-  companyId: number;
 
   @AllowNull(false)
   @Column

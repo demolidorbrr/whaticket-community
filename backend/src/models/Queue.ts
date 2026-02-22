@@ -1,4 +1,4 @@
-﻿import {
+import {
   Table,
   Column,
   CreatedAt,
@@ -61,9 +61,6 @@ class Queue extends Model<Queue> {
   @AutoIncrement
   @Column
   id: number;
-
-  @Column
-  companyId: number;
 
   @AllowNull(false)
   @Column

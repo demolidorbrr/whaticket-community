@@ -1,4 +1,4 @@
-﻿import {
+import {
   Table,
   Column,
   CreatedAt,
@@ -65,9 +65,6 @@ class Ticket extends Model<Ticket> {
   @AutoIncrement
   @Column
   id: number;
-
-  @Column
-  companyId: number;
 
   @Column({ defaultValue: "pending" })
   status: string;

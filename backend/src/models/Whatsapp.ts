@@ -1,4 +1,4 @@
-﻿import {
+import {
   Table,
   Column,
   CreatedAt,
@@ -60,9 +60,6 @@ class Whatsapp extends Model<Whatsapp> {
   @AutoIncrement
   @Column
   id: number;
-
-  @Column
-  companyId: number;
 
   @AllowNull
   @Column(DataType.TEXT)
