@@ -25,6 +25,10 @@ const useStyles = makeStyles(() => ({
 const ChangeQueueModal = ({ modalOpen, onClose, ticket }) => {
   const classes = useStyles();
   const { user } = useContext(AuthContext);
+  // Superadmin deve ter o mesmo comportamento administrativo ao listar filas.
+  const isAdminLike = ["admin", "superadmin"].includes(
+    (user?.profile || "").toLowerCase()
+  );
   const [loading, setLoading] = useState(false);
   const [queues, setQueues] = useState([]);
   const [selectedQueue, setSelectedQueue] = useState("");
@@ -36,7 +40,7 @@ const ChangeQueueModal = ({ modalOpen, onClose, ticket }) => {
 
     const loadQueues = async () => {
       try {
-        if (user?.profile === "admin") {
+        if (isAdminLike) {
           const { data } = await api.get("/queue");
           setQueues(Array.isArray(data) ? data : []);
           return;
@@ -49,7 +53,7 @@ const ChangeQueueModal = ({ modalOpen, onClose, ticket }) => {
     };
 
     loadQueues();
-  }, [modalOpen, ticket?.queueId, user?.profile, user?.queues]);
+  }, [isAdminLike, modalOpen, ticket?.queueId, user?.queues]);
 
   const queueOptions = useMemo(() => {
     const list = Array.isArray(queues) ? [...queues] : [];

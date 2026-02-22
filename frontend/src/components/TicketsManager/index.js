@@ -1,4 +1,4 @@
-﻿import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import { makeStyles } from "@material-ui/core/styles";
 import Paper from "@material-ui/core/Paper";
 import SearchIcon from "@material-ui/icons/Search";
@@ -98,6 +98,7 @@ const TicketsManager = () => {
   const [openCount, setOpenCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [groupsCount, setGroupsCount] = useState(0);
+  // Superadmin deve operar com as mesmas capacidades do admin neste gerenciador.
   const isAdmin = ["ADMIN", "SUPERADMIN"].includes(
     user.profile?.toUpperCase()
   );
@@ -374,4 +375,3 @@ const TicketsManager = () => {
 };
 
 export default TicketsManager;
-

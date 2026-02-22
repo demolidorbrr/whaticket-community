@@ -1,11 +1,10 @@
 import { Request, Response } from "express";
-import { getIO } from "../libs/socket";
 import {
+  emitToCompanyRooms,
   getCompanyNotificationRoom,
-  getCompanyStatusRoom,
-  getCompanyTicketRoom
-} from "../libs/socketRooms";
-import { logger } from "../utils/logger";
+  getCompanyTicketRoom,
+  getCompanyTicketsStatusRoom
+} from "../libs/socket";
 
 import CreateTicketService from "../services/TicketServices/CreateTicketService";
 import DeleteTicketService from "../services/TicketServices/DeleteTicketService";
@@ -24,6 +23,7 @@ type IndexQuery = {
   showAll: string;
   withUnreadMessages: string;
   queueIds: string;
+  groupMode?: "all" | "only" | "exclude" | string;
 };
 
 interface TicketData {
@@ -44,7 +44,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     searchParam,
     showAll,
     queueIds: queueIdsStringified,
-    withUnreadMessages
+    withUnreadMessages,
+    groupMode
   } = req.query as IndexQuery;
 
   const userId = req.user.id;
@@ -55,6 +56,9 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     queueIds = JSON.parse(queueIdsStringified);
   }
 
+  const normalizedGroupMode =
+    groupMode === "only" || groupMode === "exclude" ? groupMode : "all";
+
   const { tickets, count, hasMore } = await ListTicketsService({
     searchParam,
     pageNumber,
@@ -63,7 +67,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     showAll,
     userId,
     queueIds,
-    withUnreadMessages
+    withUnreadMessages,
+    groupMode: normalizedGroupMode
   });
 
   return res.status(200).json({ tickets, count, hasMore });
@@ -74,21 +79,15 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   const ticket = await CreateTicketService({ contactId, status, userId });
 
-  if (ticket.companyId) {
-    const io = getIO();
-    const statusRoomName = getCompanyStatusRoom(ticket.companyId, ticket.status);
-
-    io.to(statusRoomName).emit("ticket", {
+  emitToCompanyRooms(
+    (ticket as any).companyId,
+    [getCompanyTicketsStatusRoom((ticket as any).companyId, ticket.status)],
+    "ticket",
+    {
       action: "update",
       ticket
-    });
-  } else {
-    // Security hardening: avoid broadcasting ticket updates without tenant scope.
-    logger.warn({
-      info: "Skipping ticket socket emit without companyId",
-      ticketId: ticket.id
-    });
-  }
+    }
+  );
 
   return res.status(200).json(ticket);
 };
@@ -138,26 +137,21 @@ export const remove = async (
 
   const ticket = await DeleteTicketService(ticketId);
 
-  if (ticket.companyId) {
-    const io = getIO();
-    const statusRoomName = getCompanyStatusRoom(ticket.companyId, ticket.status);
-    const ticketRoomName = getCompanyTicketRoom(ticket.companyId, ticketId);
-    const notificationRoomName = getCompanyNotificationRoom(ticket.companyId);
+  const companyId = (ticket as any).companyId;
 
-    io.to(statusRoomName)
-      .to(ticketRoomName)
-      .to(notificationRoomName)
-      .emit("ticket", {
-        action: "delete",
-        ticketId: +ticketId
-      });
-  } else {
-    logger.warn({
-      info: "Skipping ticket delete socket emit without companyId",
-      ticketId
-    });
-  }
+  emitToCompanyRooms(
+    companyId,
+    [
+      getCompanyTicketsStatusRoom(companyId, ticket.status),
+      getCompanyTicketRoom(companyId, ticketId),
+      getCompanyNotificationRoom(companyId)
+    ],
+    "ticket",
+    {
+      action: "delete",
+      ticketId: +ticketId
+    }
+  );
 
   return res.status(200).json({ message: "ticket deleted" });
 };
-

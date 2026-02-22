@@ -18,6 +18,7 @@ interface Request {
   userId: string;
   withUnreadMessages?: string;
   queueIds: number[];
+  groupMode?: "all" | "only" | "exclude";
 }
 
 interface Response {
@@ -34,10 +35,13 @@ const ListTicketsService = async ({
   date,
   showAll,
   userId,
-  withUnreadMessages
+  withUnreadMessages,
+  groupMode = "all"
 }: Request): Promise<Response> => {
   const user = await ShowUserService(userId);
   const userQueueIds = user.queues.map(queue => queue.id);
+  const userCompanyId = (user as any).companyId as number | undefined;
+  const associationCompanyWhere = userCompanyId ? { companyId: userCompanyId } : undefined;
 
   const normalizedQueueIds =
     showAll === "true"
@@ -70,32 +74,40 @@ const ListTicketsService = async ({
       queueId: null
     };
   }
-  let includeCondition: Includeable[];
-
-  includeCondition = [
+  let includeCondition: Includeable[] = [
     {
       model: Contact,
       as: "contact",
+      where: associationCompanyWhere,
+      required: false,
       attributes: ["id", "name", "number", "profilePicUrl"]
     },
     {
       model: Queue,
       as: "queue",
+      where: associationCompanyWhere,
+      required: false,
       attributes: ["id", "name", "color"]
     },
     {
       model: User,
       as: "user",
+      where: associationCompanyWhere,
+      required: false,
       attributes: ["id", "name"]
     },
     {
       model: Whatsapp,
       as: "whatsapp",
+      where: associationCompanyWhere,
+      required: false,
       attributes: ["name"]
     },
     {
       model: Tag,
       as: "tags",
+      where: associationCompanyWhere,
+      required: false,
       attributes: ["id", "name", "color"],
       through: { attributes: [] }
     }
@@ -142,6 +154,7 @@ const ListTicketsService = async ({
 
   if (date) {
     whereCondition = {
+      ...whereCondition,
       createdAt: {
         [Op.between]: [+startOfDay(parseISO(date)), +endOfDay(parseISO(date))]
       }
@@ -158,6 +171,30 @@ const ListTicketsService = async ({
       [Op.or]: [{ userId }, { status: "pending" }],
       ...unreadQueueFilter,
       unreadMessages: { [Op.gt]: 0 }
+    };
+  }
+
+  if (status !== "group") {
+    // Mantem alinhamento entre contagens e listas da UI para tickets de contato (nao-grupo).
+    if (groupMode === "exclude") {
+      whereCondition = {
+        ...whereCondition,
+        isGroup: false
+      };
+    }
+
+    if (groupMode === "only") {
+      whereCondition = {
+        ...whereCondition,
+        isGroup: true
+      };
+    }
+  }
+
+  if (userCompanyId) {
+    whereCondition = {
+      ...whereCondition,
+      companyId: userCompanyId
     };
   }
 

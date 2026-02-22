@@ -1,13 +1,10 @@
-﻿import { verify } from "jsonwebtoken";
+import { verify } from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
 
 import AppError from "../errors/AppError";
 import authConfig from "../config/auth";
-import { setTenantContext } from "../libs/tenantContext";
-import Company from "../models/Company";
-import Plan from "../models/Plan";
 import User from "../models/User";
-import EnsureCompanyIsActiveService from "../services/CompanyServices/EnsureCompanyIsActiveService";
+import { runWithTenantContext } from "../libs/tenantContext";
 
 interface TokenPayload {
   id: string;
@@ -31,52 +28,44 @@ const isAuth = async (
 
   const [, token] = authHeader.split(" ");
 
-  let decoded: TokenPayload;
   try {
-    // Mantem o retry de refresh no frontend apenas para token invalido/expirado.
-    decoded = verify(token, authConfig.secret) as TokenPayload;
-  } catch (err) {
-    throw new AppError("ERR_INVALID_TOKEN", 403);
-  }
+    const decoded = verify(token, authConfig.secret);
+    const { id, profile } = decoded as TokenPayload;
 
-  const { id, profile, companyId } = decoded;
-
-  let resolvedCompanyId = Number(companyId || 0);
-
-  if (!resolvedCompanyId) {
     const user = await User.findByPk(id, {
-      attributes: ["companyId"]
+      attributes: ["id", "profile", "companyId"]
     });
 
-    if (!user?.companyId) {
+    if (!user) {
       throw new AppError("ERR_SESSION_EXPIRED", 401);
     }
 
-    resolvedCompanyId = user.companyId;
+    const companyId = (user as any).companyId ?? null;
+    if (user.profile !== "superadmin" && !companyId) {
+      throw new AppError("ERR_SESSION_EXPIRED", 401);
+    }
+
+    req.user = {
+      id: String(user.id),
+      profile: user.profile,
+      companyId
+    };
+  } catch (err) {
+    if (err instanceof AppError) {
+      throw err;
+    }
+
+    throw new AppError(
+      "Invalid token. We'll try to assign a new one on next request",
+      403
+    );
   }
 
-  if (profile !== "superadmin") {
-    const company = await Company.findByPk(resolvedCompanyId, {
-      include: [{ model: Plan, as: "plan" }]
-    });
-
-    EnsureCompanyIsActiveService(company);
-  }
-
-  req.user = {
-    id,
-    profile,
-    companyId: resolvedCompanyId
-  };
-
-  // Garante escopo de tenant em toda cadeia async da request autenticada.
-  setTenantContext({
-    companyId: resolvedCompanyId,
-    profile
-  });
-
-  next();
+  runWithTenantContext(
+    // Injeta contexto do tenant para hooks globais de seguranca.
+    { companyId: req.user.companyId ?? null, profile: req.user.profile },
+    () => next()
+  );
 };
 
 export default isAuth;
-

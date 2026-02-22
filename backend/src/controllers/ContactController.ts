@@ -1,5 +1,6 @@
-﻿import * as Yup from "yup";
+import * as Yup from "yup";
 import { Request, Response } from "express";
+import { emitToCompany } from "../libs/socket";
 
 import ListContactsService from "../services/ContactServices/ListContactsService";
 import CreateContactService from "../services/ContactServices/CreateContactService";
@@ -12,7 +13,6 @@ import CheckIsValidContact from "../services/WbotServices/CheckIsValidContact";
 import GetProfilePicUrl from "../services/WbotServices/GetProfilePicUrl";
 import AppError from "../errors/AppError";
 import GetContactService from "../services/ContactServices/GetContactService";
-import { emitByCompany } from "../helpers/SocketEmitByCompany";
 
 type IndexQuery = {
   searchParam: string;
@@ -82,10 +82,10 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   const profilePicUrl = await GetProfilePicUrl(validNumber);
 
-  const name = newContact.name;
-  const number = validNumber;
-  const email = newContact.email;
-  const extraInfo = newContact.extraInfo;
+  let name = newContact.name;
+  let number = validNumber;
+  let email = newContact.email;
+  let extraInfo = newContact.extraInfo;
 
   const contact = await CreateContactService({
     name,
@@ -95,7 +95,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     profilePicUrl
   });
 
-  emitByCompany(contact.companyId, "contact", {
+  emitToCompany((contact as any).companyId, "contact", {
     action: "create",
     contact
   });
@@ -137,7 +137,7 @@ export const update = async (
 
   const contact = await UpdateContactService({ contactData, contactId });
 
-  emitByCompany(contact.companyId, "contact", {
+  emitToCompany((contact as any).companyId, "contact", {
     action: "update",
     contact
   });
@@ -153,11 +153,10 @@ export const remove = async (
 
   await DeleteContactService(contactId);
 
-  emitByCompany(req.user.companyId, "contact", {
+  emitToCompany(req.user.companyId ?? null, "contact", {
     action: "delete",
     contactId
   });
 
   return res.status(200).json({ message: "Contact deleted" });
 };
-

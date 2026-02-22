@@ -1,11 +1,11 @@
-﻿import { Request, Response } from "express";
+import { Request, Response } from "express";
+import { emitToCompany } from "../libs/socket";
 
 import ListSchedulesService from "../services/ScheduleServices/ListSchedulesService";
 import CreateScheduleService from "../services/ScheduleServices/CreateScheduleService";
 import UpdateScheduleService from "../services/ScheduleServices/UpdateScheduleService";
 import DeleteScheduleService from "../services/ScheduleServices/DeleteScheduleService";
 import ShowScheduleService from "../services/ScheduleServices/ShowScheduleService";
-import { emitByCompany } from "../helpers/SocketEmitByCompany";
 
 type IndexQuery = {
   status?: string;
@@ -37,7 +37,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
   const schedule = await ShowScheduleService(createdSchedule.id);
 
-  emitByCompany(schedule.companyId, "schedule", {
+  emitToCompany((schedule as any).companyId ?? req.user.companyId ?? null, "schedule", {
     action: "create",
     schedule
   });
@@ -56,7 +56,7 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
     status
   });
 
-  emitByCompany(schedule.companyId, "schedule", {
+  emitToCompany((schedule as any).companyId ?? req.user.companyId ?? null, "schedule", {
     action: "update",
     schedule
   });
@@ -66,14 +66,12 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
 
 export const remove = async (req: Request, res: Response): Promise<Response> => {
   const { scheduleId } = req.params;
-  const schedule = await ShowScheduleService(scheduleId);
   await DeleteScheduleService(scheduleId);
 
-  emitByCompany(schedule.companyId, "schedule", {
+  emitToCompany(req.user.companyId ?? null, "schedule", {
     action: "delete",
     scheduleId: Number(scheduleId)
   });
 
   return res.status(200).json({ message: "Schedule deleted" });
 };
-

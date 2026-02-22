@@ -132,7 +132,7 @@ const messages = {
           importMessage: "Do you want to import all contacts from the phone?",
         },
         buttons: {
-          import: "Import Contacts",
+          import: "Import CSV",
           add: "Add Contact",
         },
         table: {
@@ -447,6 +447,11 @@ const messages = {
         ERR_USER_CREATION_DISABLED:
           "User creation was disabled by administrator.",
         ERR_NO_PERMISSION: "You don't have permission to access this resource.",
+        ERR_COMPANY_REQUIRED: "Could not identify the company for this session.",
+        ERR_NO_COMPANY_CONTEXT:
+          "Could not identify the company for this session.",
+        ERR_CHANNEL_FORBIDDEN_COMPANY:
+          "Inbound webhook blocked: provided company does not match channel.",
         ERR_DUPLICATED_CONTACT: "A contact with this number already exists.",
         ERR_NO_SETTING_FOUND: "No setting found with this ID.",
         ERR_NO_CONTACT_FOUND: "No contact found with this ID.",
@@ -461,6 +466,10 @@ const messages = {
           "This color is already in use, pick another one.",
         ERR_WAPP_GREETING_REQUIRED:
           "Greeting message is required if there is more than one queue.",
+        ERR_CONTACTS_CSV_REQUIRED:
+          "Select a CSV file to import contacts.",
+        ERR_CONTACTS_CSV_PHONE_COLUMN_NOT_FOUND:
+          "Invalid CSV file: phone columns were not found.",
       },
     },
   },

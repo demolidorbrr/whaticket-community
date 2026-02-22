@@ -8,6 +8,17 @@ import Tag from "../../models/Tag";
 import { literal } from "sequelize";
 
 const ShowTicketService = async (id: string | number): Promise<Ticket> => {
+  const ticketReference = await Ticket.findByPk(id, {
+    attributes: ["id", "companyId"]
+  });
+
+  if (!ticketReference) {
+    throw new AppError("ERR_NO_TICKET_FOUND", 404);
+  }
+
+  const companyId = (ticketReference as any).companyId as number | undefined;
+  const companyWhere = companyId ? { companyId } : undefined;
+
   const ticket = await Ticket.findByPk(id, {
     attributes: {
       include: [
@@ -29,27 +40,37 @@ const ShowTicketService = async (id: string | number): Promise<Ticket> => {
       {
         model: Contact,
         as: "contact",
+        where: companyWhere,
+        required: false,
         attributes: ["id", "name", "number", "profilePicUrl"],
         include: ["extraInfo"]
       },
       {
         model: User,
         as: "user",
+        where: companyWhere,
+        required: false,
         attributes: ["id", "name"]
       },
       {
         model: Queue,
         as: "queue",
+        where: companyWhere,
+        required: false,
         attributes: ["id", "name", "color"]
       },
       {
         model: Whatsapp,
         as: "whatsapp",
+        where: companyWhere,
+        required: false,
         attributes: ["name"]
       },
       {
         model: Tag,
         as: "tags",
+        where: companyWhere,
+        required: false,
         attributes: ["id", "name", "color"],
         through: { attributes: [] }
       }

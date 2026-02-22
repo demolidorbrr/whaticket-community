@@ -1,4 +1,6 @@
-﻿import { Sequelize } from "sequelize-typescript";
+import { Sequelize } from "sequelize-typescript";
+import Company from "../models/Company";
+import Plan from "../models/Plan";
 import User from "../models/User";
 import Setting from "../models/Setting";
 import Contact from "../models/Contact";
@@ -15,16 +17,16 @@ import Tag from "../models/Tag";
 import TicketTag from "../models/TicketTag";
 import TicketEvent from "../models/TicketEvent";
 import Schedule from "../models/Schedule";
-import Company from "../models/Company";
-import Plan from "../models/Plan";
+import { registerTenantHooks } from "../libs/tenantHooks";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
-// import dbConfig from "../config/database";
 
 const sequelize = new Sequelize(dbConfig);
 
 const models = [
+  Company,
+  Plan,
   User,
   Contact,
   Ticket,
@@ -40,12 +42,10 @@ const models = [
   Tag,
   TicketTag,
   TicketEvent,
-  Schedule,
-  Company,
-  Plan
+  Schedule
 ];
 
 sequelize.addModels(models);
+registerTenantHooks(models as any);
 
 export default sequelize;
-

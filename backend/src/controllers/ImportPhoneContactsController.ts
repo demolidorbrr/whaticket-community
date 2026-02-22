@@ -1,9 +1,24 @@
 import { Request, Response } from "express";
-import ImportContactsService from "../services/WbotServices/ImportContactsService";
+import fs from "fs/promises";
+import AppError from "../errors/AppError";
+import ImportContactsCsvService from "../services/ContactServices/ImportContactsCsvService";
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const userId: number = parseInt(req.user.id);
-  await ImportContactsService(userId);
+  if (!req.file) {
+    throw new AppError("ERR_CONTACTS_CSV_REQUIRED", 400);
+  }
 
-  return res.status(200).json({ message: "contacts imported" });
+  if (!req.user.companyId) {
+    throw new AppError("ERR_NO_COMPANY_CONTEXT", 400);
+  }
+
+  try {
+    const result = await ImportContactsCsvService({
+      filePath: req.file.path,
+      companyId: req.user.companyId
+    });
+    return res.status(200).json(result);
+  } finally {
+    await fs.unlink(req.file.path).catch(() => undefined);
+  }
 };

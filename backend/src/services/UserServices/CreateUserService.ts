@@ -1,5 +1,4 @@
 import * as Yup from "yup";
-import { Op } from "sequelize";
 
 import AppError from "../../errors/AppError";
 import { SerializeUser } from "../../helpers/SerializeUser";
@@ -7,8 +6,6 @@ import User from "../../models/User";
 import Queue from "../../models/Queue";
 import Whatsapp from "../../models/Whatsapp";
 import { getTenantContext } from "../../libs/tenantContext";
-import GetDefaultCompanyIdService from "../CompanyServices/GetDefaultCompanyIdService";
-import ValidateCompanyPlanLimitService from "../CompanyServices/ValidateCompanyPlanLimitService";
 
 interface Request {
   email: string;
@@ -25,7 +22,6 @@ interface Response {
   name: string;
   id: number;
   profile: string;
-  companyId?: number;
 }
 
 const CreateUserService = async ({
@@ -38,22 +34,12 @@ const CreateUserService = async ({
   companyId
 }: Request): Promise<Response> => {
   const tenantContext = getTenantContext();
-  const isSuperAdmin = tenantContext?.profile === "superadmin";
+  const contextCompanyId = tenantContext?.companyId ?? null;
+  const targetCompanyId = contextCompanyId || companyId || null;
 
-  // Multi-tenant guard: admin cannot force user creation in another company.
-  if (
-    tenantContext?.companyId &&
-    !isSuperAdmin &&
-    companyId &&
-    companyId !== tenantContext.companyId
-  ) {
-    throw new AppError("ERR_NO_PERMISSION", 403);
+  if (!targetCompanyId) {
+    throw new AppError("ERR_COMPANY_REQUIRED", 400);
   }
-
-  const resolvedCompanyId =
-    !isSuperAdmin && tenantContext?.companyId
-      ? tenantContext.companyId
-      : companyId || tenantContext?.companyId || (await GetDefaultCompanyIdService());
 
   const schema = Yup.object().shape({
     name: Yup.string().required().min(2),
@@ -66,7 +52,7 @@ const CreateUserService = async ({
         async value => {
           if (!value) return false;
           const emailExists = await User.findOne({
-            where: { email: value }
+            where: { email: value, companyId: targetCompanyId }
           });
           return !emailExists;
         }
@@ -80,34 +66,25 @@ const CreateUserService = async ({
     throw new AppError(err.message);
   }
 
-  await ValidateCompanyPlanLimitService({
-    companyId: resolvedCompanyId,
-    resource: "users"
-  });
-
-  if (queueIds.length) {
-    const validQueuesCount = await Queue.count({
-      where: {
-        id: { [Op.in]: queueIds },
-        companyId: resolvedCompanyId
-      }
+  if (whatsappId) {
+    const whatsapp = await Whatsapp.findByPk(whatsappId, {
+      attributes: ["id", "companyId"]
     });
 
-    if (validQueuesCount !== queueIds.length) {
-      throw new AppError("ERR_INVALID_QUEUE_SELECTION", 400);
+    if (!whatsapp || (whatsapp as any).companyId !== targetCompanyId) {
+      throw new AppError("ERR_NO_WAPP_FOUND", 404);
     }
   }
 
-  if (whatsappId) {
-    const whatsapp = await Whatsapp.findOne({
-      where: {
-        id: whatsappId,
-        companyId: resolvedCompanyId
-      }
+  if (queueIds.length > 0) {
+    const normalizedQueueIds = [...new Set(queueIds.map(id => Number(id)))];
+    const queues = await Queue.findAll({
+      where: { id: normalizedQueueIds, companyId: targetCompanyId },
+      attributes: ["id"]
     });
 
-    if (!whatsapp) {
-      throw new AppError("ERR_NO_WAPP_FOUND", 404);
+    if (queues.length !== normalizedQueueIds.length) {
+      throw new AppError("ERR_NO_QUEUE_FOUND", 404);
     }
   }
 
@@ -116,19 +93,19 @@ const CreateUserService = async ({
       email,
       password,
       name,
+      companyId: targetCompanyId,
       profile,
-      companyId: resolvedCompanyId,
       whatsappId: whatsappId ? whatsappId : null
     },
-    { include: ["queues", "whatsapp", "company"] }
+    { include: ["queues", "whatsapp"] }
   );
 
-  await user.$set("queues", queueIds);
+  const normalizedQueueIds = [...new Set(queueIds.map(id => Number(id)))];
+  await user.$set("queues", normalizedQueueIds);
 
-  await user.reload({ include: ["queues", "whatsapp", "company"] });
+  await user.reload();
 
   return SerializeUser(user);
 };
 
 export default CreateUserService;
-

@@ -1,4 +1,4 @@
-﻿import qrCode from "qrcode-terminal";
+import qrCode from "qrcode-terminal";
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -9,7 +9,7 @@ import {
   Contact as WbotContact,
   MessageSendOptions
 } from "whatsapp-web.js";
-import { emitByCompany } from "../../../helpers/SocketEmitByCompany";
+import { emitToCompany } from "../../../libs/socket";
 import Whatsapp from "../../../models/Whatsapp";
 import AppError from "../../../errors/AppError";
 import { logger } from "../../../utils/logger";
@@ -37,22 +37,31 @@ interface Session extends Client {
 }
 
 const sessions: Session[] = [];
-const PROFILE_PIC_FETCH_TIMEOUT_MS = Number(
-  process.env.WWEBJS_PROFILE_PIC_TIMEOUT_MS || 2500
-);
-const PROFILE_PIC_CACHE_TTL_MS = Number(
-  process.env.WWEBJS_PROFILE_PIC_CACHE_TTL_MS || 600000
-);
-const DEFAULT_PROTOCOL_TIMEOUT_MS = Number(
-  process.env.CHROME_PROTOCOL_TIMEOUT_MS || 120000
-);
+const resolvedChatIdCache = new Map<string, string>();
 
-type ProfilePicCacheEntry = {
-  value?: string;
-  expiresAt: number;
+const getSafeJidUser = (jid?: string): string => {
+  if (!jid) return "";
+
+  const rawUser = jid.split("@")[0] || "";
+
+  // Alguns JIDs incluem sufixo de dispositivo (ex: 5511999999999:12).
+  return rawUser.split(":")[0];
 };
 
-const profilePicCache = new Map<string, ProfilePicCacheEntry>();
+const isGroupJid = (jid?: string): boolean => {
+  if (!jid) return false;
+  return jid.endsWith("@g.us");
+};
+
+const withTimeout = async <T>(
+  operation: Promise<T>,
+  timeoutMs: number
+): Promise<T | null> => {
+  return Promise.race([
+    operation,
+    new Promise<null>(resolve => setTimeout(() => resolve(null), timeoutMs))
+  ]);
+};
 
 const clearChromeProfileLocks = (whatsappId: number): void => {
   const sessionPath = path.join(
@@ -88,65 +97,6 @@ const getWbot = (whatsappId: number): Session => {
     throw new AppError("ERR_WAPP_NOT_INITIALIZED");
   }
   return sessions[sessionIndex];
-};
-
-const getProfilePicWithTimeout = async (
-  msgContact: WbotContact
-): Promise<string | undefined> => {
-  const contactId = msgContact?.id?.user;
-  const now = Date.now();
-
-  if (contactId) {
-    const cached = profilePicCache.get(contactId);
-    if (cached && cached.expiresAt > now) {
-      return cached.value;
-    }
-  }
-
-  let timeoutHandle: NodeJS.Timeout | undefined;
-
-  try {
-    const profilePicUrl = await Promise.race<string | undefined>([
-      msgContact.getProfilePicUrl(),
-      new Promise<undefined>(resolve => {
-        timeoutHandle = setTimeout(
-          () => resolve(undefined),
-          PROFILE_PIC_FETCH_TIMEOUT_MS
-        );
-      })
-    ]);
-
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-    }
-
-    const normalized = profilePicUrl || undefined;
-
-    if (contactId) {
-      profilePicCache.set(contactId, {
-        value: normalized,
-        expiresAt: now + PROFILE_PIC_CACHE_TTL_MS
-      });
-    }
-
-    return normalized;
-  } catch (error) {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-    }
-
-    if (contactId) {
-      profilePicCache.set(contactId, {
-        value: undefined,
-        expiresAt: now + 60000
-      });
-    }
-
-    logger.warn(
-      `Could not fetch profile picture for contact ${contactId || "unknown"}: ${error}`
-    );
-    return undefined;
-  }
 };
 
 const mapMessageType = (wbotType: any): MessageType => {
@@ -210,15 +160,39 @@ const resolveChatId = async (
     return chatId;
   }
 
+  const cacheKey = `${wbot.id || 0}:${chatId}`;
+  const cachedChatId = resolvedChatIdCache.get(cacheKey);
+  if (cachedChatId) {
+    return cachedChatId;
+  }
+
+  const shouldResolveNumber =
+    String(process.env.WWEBJS_RESOLVE_NUMBER || "false").toLowerCase() ===
+    "true";
+
+  // Keep message sending responsive by default.
+  // Number resolution can be enabled explicitly via env var.
+  if (!shouldResolveNumber) {
+    return chatId;
+  }
+
   try {
-    const numberId = await wbot.getNumberId(chatId);
+    const timeoutMs = Number(
+      process.env.WWEBJS_RESOLVE_NUMBER_TIMEOUT_MS || "1200"
+    );
+
+    const numberId = (await Promise.race([
+      wbot.getNumberId(chatId),
+      new Promise(resolve => setTimeout(() => resolve(null), timeoutMs))
+    ])) as any;
 
     if (!numberId) {
-      throw new AppError("ERR_WAPP_INVALID_CONTACT");
+      return chatId;
     }
 
     const serializedId = (numberId as any)?._serialized;
     if (serializedId) {
+      resolvedChatIdCache.set(cacheKey, serializedId);
       return serializedId;
     }
   } catch (err) {
@@ -231,7 +205,14 @@ const resolveChatId = async (
 const convertToContactPayload = async (
   msgContact: WbotContact
 ): Promise<ContactPayload> => {
-  const profilePicUrl = await getProfilePicWithTimeout(msgContact);
+  let profilePicUrl: string | undefined;
+
+  try {
+    profilePicUrl = await msgContact.getProfilePicUrl();
+  } catch (err) {
+    // Falha de avatar nao deve interromper persistencia da mensagem.
+    logger.warn(`Could not fetch profile picture for contact: ${err}`);
+  }
 
   return {
     name: msgContact.name || msgContact.pushname || msgContact.id.user,
@@ -307,6 +288,14 @@ const convertToMediaPayload = async (
 const shouldHandleMessage = (msg: WbotMessage): boolean => {
   if (msg.from === "status@broadcast") return false;
 
+  const shouldProcessOutgoingEvents =
+    String(process.env.WWEBJS_PROCESS_OUTGOING_EVENTS || "true").toLowerCase() ===
+    "true";
+
+  // Mantem espelhamento por padrao para mensagens enviadas no celular.
+  // Se necessario, pode desativar via env.
+  if (msg.fromMe && !shouldProcessOutgoingEvents) return false;
+
   if (
     !(
       msg.type === "chat" ||
@@ -350,32 +339,88 @@ const getMessageData = async (
   contextPayload: WhatsappContextPayload;
   mediaPayload: MediaPayload | undefined;
 }> => {
-  let msgContact: WbotContact;
+  const messageJid = msg.fromMe ? msg.to : msg.from;
+  const contactNumberFallback = getSafeJidUser(messageJid);
+  const isGroupMessageByJid = isGroupJid(messageJid);
+
+  let msgContact: WbotContact | undefined;
   let groupContact: ContactPayload | undefined;
+  let chat: Awaited<ReturnType<WbotMessage["getChat"]>> | null = null;
 
-  if (msg.fromMe) {
-    msgContact = await wbot.getContactById(msg.to);
-  } else {
-    msgContact = await msg.getContact();
-  }
+  const contactTimeoutMs = Number(
+    process.env.WWEBJS_CONTACT_FETCH_TIMEOUT_MS || "1500"
+  );
+  const chatTimeoutMs = Number(process.env.WWEBJS_CHAT_FETCH_TIMEOUT_MS || "1500");
 
-  const chat = await msg.getChat();
-
-  if (chat.isGroup) {
-    let msgGroupContact;
-
+  try {
     if (msg.fromMe) {
-      msgGroupContact = await wbot.getContactById(msg.to);
+      msgContact =
+        ((await withTimeout(
+          wbot.getContactById(msg.to),
+          contactTimeoutMs
+        )) as WbotContact | null) || undefined;
     } else {
-      msgGroupContact = await wbot.getContactById(msg.from);
+      msgContact =
+        ((await withTimeout(
+          msg.getContact(),
+          contactTimeoutMs
+        )) as WbotContact | null) || undefined;
     }
-
-    groupContact = await convertToContactPayload(msgGroupContact);
+  } catch (err) {
+    logger.warn(`Could not fetch message contact: ${err}`);
   }
 
-  const unreadMessages = msg.fromMe ? 0 : chat.unreadCount;
+  try {
+    chat =
+      ((await withTimeout(
+        msg.getChat(),
+        chatTimeoutMs
+      )) as Awaited<ReturnType<WbotMessage["getChat"]>> | null) || null;
+  } catch (err) {
+    logger.warn(`Could not fetch message chat: ${err}`);
+  }
 
-  const contactPayload = await convertToContactPayload(msgContact);
+  const isGroupMessage = Boolean(chat?.isGroup) || isGroupMessageByJid;
+
+  if (isGroupMessage) {
+    const groupJid = msg.fromMe ? msg.to : msg.from;
+
+    try {
+      const msgGroupContact = (await withTimeout(
+        wbot.getContactById(groupJid),
+        contactTimeoutMs
+      )) as WbotContact | null;
+
+      if (msgGroupContact) {
+        groupContact = await convertToContactPayload(msgGroupContact);
+      } else {
+        groupContact = {
+          name: getSafeJidUser(groupJid) || "Grupo",
+          number: getSafeJidUser(groupJid),
+          isGroup: true
+        };
+      }
+    } catch (err) {
+      logger.warn(`Could not fetch group contact: ${err}`);
+      groupContact = {
+        name: getSafeJidUser(groupJid) || "Grupo",
+        number: getSafeJidUser(groupJid),
+        isGroup: true
+      };
+    }
+  }
+
+  const unreadMessages = msg.fromMe
+    ? 0
+    : Math.max(1, Number(chat?.unreadCount || 1));
+
+  const contactPayload = msgContact
+    ? await convertToContactPayload(msgContact)
+    : {
+        name: contactNumberFallback || "Contato",
+        number: contactNumberFallback,
+        isGroup: isGroupMessageByJid
+      };
   const messagePayload = await convertToMessagePayload(msg);
   const mediaPayload = await convertToMediaPayload(msg);
 
@@ -450,7 +495,9 @@ const sendMessage = async (
   options?: SendMessageOptions
 ): Promise<ProviderMessage> => {
   const wbot = getWbot(sessionId);
+  const startedAt = Date.now();
   const resolvedChatId = await resolveChatId(wbot, to);
+  const resolvedAt = Date.now();
 
   const quotedMsgSerializedId = options?.quotedMessageId
     ? getSerializedMessageId(
@@ -469,6 +516,15 @@ const sendMessage = async (
   }
 
   const sentMessage = await wbot.sendMessage(resolvedChatId, body, sendOptions);
+  const sentAt = Date.now();
+
+  if (resolvedAt - startedAt > 1000 || sentAt - resolvedAt > 2000) {
+    logger.warn(
+      `Slow sendMessage session=${sessionId} resolveMs=${
+        resolvedAt - startedAt
+      } sendMs=${sentAt - resolvedAt} chatId=${to}`
+    );
+  }
 
   return convertToProviderMessage(sentMessage);
 };
@@ -526,14 +582,8 @@ const getProfilePicUrl = async (
   number: string
 ): Promise<string> => {
   const wbot = getWbot(sessionId);
-
-  try {
-    const profilePicUrl = await wbot.getProfilePicUrl(`${number}@c.us`);
-    return profilePicUrl || "";
-  } catch (error) {
-    logger.warn(`Could not fetch profile picture for ${number}: ${error}`);
-    return "";
-  }
+  const profilePicUrl = await wbot.getProfilePicUrl(`${number}@c.us`);
+  return profilePicUrl;
 };
 
 const sendSeen = async (sessionId: number, chatId: string): Promise<void> => {
@@ -608,7 +658,6 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         // headless: false, // TODO make sure chromium closes on session disconnection / delete
         executablePath: process.env.CHROME_BIN || undefined,
         browserWSEndpoint: process.env.CHROME_WS || undefined,
-        protocolTimeout: DEFAULT_PROTOCOL_TIMEOUT_MS,
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
@@ -633,7 +682,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         sessions.push(wbot);
       }
 
-      emitByCompany(whatsapp.companyId, "whatsappSession", {
+      emitToCompany((whatsapp as any).companyId, "whatsappSession", {
         action: "update",
         session: whatsapp
       });
@@ -657,7 +706,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         retries: whatsapp.retries + 1
       });
 
-      emitByCompany(whatsapp.companyId, "whatsappSession", {
+      emitToCompany((whatsapp as any).companyId, "whatsappSession", {
         action: "update",
         session: whatsapp
       });
@@ -673,7 +722,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
           retries: 0
         });
 
-        emitByCompany(whatsapp.companyId, "whatsappSession", {
+        emitToCompany((whatsapp as any).companyId, "whatsappSession", {
           action: "update",
           session: whatsapp
         });
@@ -685,7 +734,16 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         }
 
         wbot.sendPresenceAvailable();
-        await syncUnreadMessages(wbot);
+        const shouldSyncUnreadOnReady =
+          String(process.env.WWEBJS_SYNC_UNREAD_ON_READY || "false").toLowerCase() ===
+          "true";
+
+        // Avoid blocking message sends while loading unread history.
+        if (shouldSyncUnreadOnReady) {
+          setTimeout(() => {
+            syncUnreadMessages(wbot);
+          }, 0);
+        }
       } catch (err) {
         logger.error(err, "Error on whatsapp ready event");
       }
@@ -696,7 +754,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       try {
         await whatsapp.update({ status: newState });
 
-        emitByCompany(whatsapp.companyId, "whatsappSession", {
+        emitToCompany((whatsapp as any).companyId, "whatsappSession", {
           action: "update",
           session: whatsapp
         });
@@ -710,7 +768,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       try {
         await whatsapp.update({ status: "OPENING", session: "" });
 
-        emitByCompany(whatsapp.companyId, "whatsappSession", {
+        emitToCompany((whatsapp as any).companyId, "whatsappSession", {
           action: "update",
           session: whatsapp
         });
@@ -784,7 +842,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         retries: nextRetries
       });
 
-      emitByCompany(whatsapp.companyId, "whatsappSession", {
+      emitToCompany((whatsapp as any).companyId, "whatsappSession", {
         action: "update",
         session: whatsapp
       });
@@ -817,4 +875,3 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   sendSeen,
   fetchChatMessages
 };
-

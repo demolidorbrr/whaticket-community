@@ -4,6 +4,8 @@ import AuthUserService from "../../../services/UserServices/AuthUserService";
 import CreateUserService from "../../../services/UserServices/CreateUserService";
 import { disconnect, truncate } from "../../utils/database";
 
+const COMPANY_ID = 1;
+
 describe("Auth", () => {
   beforeEach(async () => {
     await truncate();
@@ -24,7 +26,8 @@ describe("Auth", () => {
     await CreateUserService({
       name: faker.name.findName(),
       email,
-      password
+      password,
+      companyId: COMPANY_ID
     });
 
     const response = await AuthUserService({
@@ -52,7 +55,8 @@ describe("Auth", () => {
     await CreateUserService({
       name: faker.name.findName(),
       email: "mail@test.com",
-      password: faker.internet.password()
+      password: faker.internet.password(),
+      companyId: COMPANY_ID
     });
 
     try {

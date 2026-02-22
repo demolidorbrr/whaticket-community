@@ -1,4 +1,4 @@
-﻿import { Request, Response } from "express";
+import { Request, Response } from "express";
 import * as Yup from "yup";
 import AppError from "../errors/AppError";
 import GetDefaultWhatsApp from "../helpers/GetDefaultWhatsApp";
@@ -13,7 +13,6 @@ import CheckContactNumber from "../services/WbotServices/CheckNumber";
 import GetProfilePicUrl from "../services/WbotServices/GetProfilePicUrl";
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
-import { runWithTenantContext } from "../libs/tenantContext";
 
 type WhatsappData = {
   whatsappId: number;
@@ -32,12 +31,31 @@ interface ContactData {
 
 const createContact = async (
   whatsappId: number | undefined,
-  newContact: string
+  newContact: string,
+  companyId: number | null | undefined,
+  userId?: number
 ) => {
+  await CheckIsValidContact(newContact);
+
+  const validNumber: any = await CheckContactNumber(newContact);
+
+  const profilePicUrl = await GetProfilePicUrl(validNumber);
+
+  const number = validNumber;
+
+  const contactData = {
+    name: `${number}`,
+    number,
+    profilePicUrl,
+    isGroup: false
+  };
+
+  const contact = await CreateOrUpdateContactService(contactData);
+
   let whatsapp: Whatsapp | null;
 
   if (whatsappId === undefined) {
-    whatsapp = await GetDefaultWhatsApp();
+    whatsapp = await GetDefaultWhatsApp(userId);
   } else {
     whatsapp = await Whatsapp.findByPk(whatsappId);
 
@@ -46,53 +64,17 @@ const createContact = async (
     }
   }
 
-  if (!whatsapp?.companyId) {
-    throw new AppError("ERR_NO_COMPANY_FOUND", 403);
+  if (companyId && (whatsapp as any).companyId !== companyId) {
+    throw new AppError("ERR_NO_WAPP_FOUND", 404);
   }
 
-  const selectedWhatsapp = whatsapp;
+  const createTicket = await FindOrCreateTicketService(contact, whatsapp.id, 1);
 
-  return runWithTenantContext(
-    {
-      companyId: selectedWhatsapp.companyId,
-      profile: "api"
-    },
-    async () => {
-      await CheckIsValidContact(newContact, selectedWhatsapp.id);
+  const ticket = await ShowTicketService(createTicket.id);
 
-      const validNumber: any = await CheckContactNumber(
-        newContact,
-        selectedWhatsapp.id
-      );
+  SetTicketMessagesAsRead(ticket);
 
-      const profilePicUrl = await GetProfilePicUrl(
-        validNumber,
-        selectedWhatsapp.id
-      );
-
-      const number = validNumber;
-      const contactData = {
-        name: `${number}`,
-        number,
-        profilePicUrl,
-        isGroup: false
-      };
-
-      const contact = await CreateOrUpdateContactService(contactData);
-
-      const createTicket = await FindOrCreateTicketService(
-        contact,
-        selectedWhatsapp.id,
-        1
-      );
-
-      const ticket = await ShowTicketService(createTicket.id);
-
-      SetTicketMessagesAsRead(ticket);
-
-      return ticket;
-    }
-  );
+  return ticket;
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
@@ -115,7 +97,12 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     throw new AppError(err.message);
   }
 
-  const contactAndTicket = await createContact(whatsappId, newContact.number);
+  const contactAndTicket = await createContact(
+    whatsappId,
+    newContact.number,
+    req.user.companyId ?? null,
+    Number(req.user.id) || undefined
+  );
 
   if (medias) {
     await Promise.all(
@@ -129,4 +116,3 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
   return res.send();
 };
-

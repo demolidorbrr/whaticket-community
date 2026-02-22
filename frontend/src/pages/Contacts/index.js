@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useReducer, useContext } from "react";
+import React, { useState, useEffect, useReducer, useContext, useRef } from "react";
 import openSocket from "../../services/socket-io";
 import { toast } from "react-toastify";
 import { useHistory } from "react-router-dom";
@@ -103,6 +103,7 @@ const Contacts = () => {
   const [deletingContact, setDeletingContact] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const csvInputRef = useRef(null);
 
   useEffect(() => {
     dispatch({ type: "RESET" });
@@ -194,13 +195,43 @@ const Contacts = () => {
     setPageNumber(1);
   };
 
-  const handleimportContact = async () => {
+  const handleCloseConfirmationModal = () => {
+    setConfirmOpen(false);
+    setDeletingContact(null);
+  };
+
+  const handleImportCsv = async (file) => {
+    if (!file) {
+      return;
+    }
+
     try {
-      await api.post("/contacts/import");
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const { data } = await api.post("/contacts/import", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      toast.success(
+        `CSV importado: ${data.createdContacts} novos, ${data.updatedContacts} atualizados.`
+      );
       history.go(0);
     } catch (err) {
       toastError(err);
     }
+  };
+
+  const handleClickImportCsv = () => {
+    csvInputRef.current?.click();
+  };
+
+  const handleCsvFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    await handleImportCsv(file);
+    event.target.value = "";
   };
 
   const loadMore = () => {
@@ -224,28 +255,25 @@ const Contacts = () => {
         contactId={selectedContactId}
       ></ContactModal>
       <ConfirmationModal
-        title={
-          deletingContact
-            ? `${i18n.t("contacts.confirmationModal.deleteTitle")} ${
-                deletingContact.name
-              }?`
-            : `${i18n.t("contacts.confirmationModal.importTitlte")}`
-        }
-        open={confirmOpen}
-        onClose={setConfirmOpen}
-        onConfirm={(e) =>
-          deletingContact
-            ? handleDeleteContact(deletingContact.id)
-            : handleimportContact()
-        }
+        title={`${i18n.t("contacts.confirmationModal.deleteTitle")} ${
+          deletingContact?.name || ""
+        }?`}
+        open={confirmOpen && Boolean(deletingContact)}
+        onClose={handleCloseConfirmationModal}
+        onConfirm={() => deletingContact && handleDeleteContact(deletingContact.id)}
       >
-        {deletingContact
-          ? `${i18n.t("contacts.confirmationModal.deleteMessage")}`
-          : `${i18n.t("contacts.confirmationModal.importMessage")}`}
+        {i18n.t("contacts.confirmationModal.deleteMessage")}
       </ConfirmationModal>
       <MainHeader>
         <Title>{i18n.t("contacts.title")}</Title>
         <MainHeaderButtonsWrapper>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            style={{ display: "none" }}
+            onChange={handleCsvFileChange}
+          />
           <TextField
             placeholder={i18n.t("contacts.searchPlaceholder")}
             type="search"
@@ -262,7 +290,7 @@ const Contacts = () => {
           <Button
             variant="contained"
             color="primary"
-            onClick={(e) => setConfirmOpen(true)}
+            onClick={handleClickImportCsv}
           >
             {i18n.t("contacts.buttons.import")}
           </Button>
@@ -326,8 +354,8 @@ const Contacts = () => {
                         <IconButton
                           size="small"
                           onClick={(e) => {
-                            setConfirmOpen(true);
                             setDeletingContact(contact);
+                            setConfirmOpen(true);
                           }}
                         >
                           <DeleteOutlineIcon />

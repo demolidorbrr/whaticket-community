@@ -173,6 +173,7 @@ const UserModal = ({ open, onClose, userId }) => {
 									<Field
 										as={TextField}
 										name="password"
+										autoComplete={userId ? "current-password" : "new-password"}
 										variant="outlined"
 										margin="dense"
 										label={i18n.t("userModal.form.password")}

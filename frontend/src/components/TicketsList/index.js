@@ -199,6 +199,7 @@ const reducer = (state, action) => {
 		status,
 		showAll,
 		queueIds: JSON.stringify(selectedQueueIds),
+		groupMode
 	});
 
 	useEffect(() => {

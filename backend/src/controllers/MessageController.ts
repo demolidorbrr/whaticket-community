@@ -1,10 +1,9 @@
 import { Request, Response } from "express";
 
 import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
-import { getIO } from "../libs/socket";
-import { getCompanyTicketRoom } from "../libs/socketRooms";
+import { emitToCompanyRooms, getCompanyTicketRoom } from "../libs/socket";
 import Message from "../models/Message";
-import { logger } from "../utils/logger";
+import Ticket from "../models/Ticket";
 
 import ListMessagesService from "../services/MessageServices/ListMessagesService";
 import CreateMessageService from "../services/MessageServices/CreateMessageService";
@@ -21,7 +20,7 @@ type IndexQuery = {
 };
 
 type MessageData = {
-  body: string | string[];
+  body: string;
   fromMe: boolean;
   read: boolean;
   quotedMsg?: Message;
@@ -44,13 +43,14 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const { ticketId } = req.params;
   const { body, quotedMsg }: MessageData = req.body;
-  const normalizedBody = Array.isArray(body) ? body[0] : body;
   const medias = req.files as Express.Multer.File[];
 
   const ticket = await ShowTicketService(ticketId);
   const isWhatsAppChannel = !ticket.channel || ticket.channel === "whatsapp";
 
-  SetTicketMessagesAsRead(ticket);
+  // Do not block outbound send with WhatsApp "seen" sync.
+  // This keeps message submission responsive under session load.
+  SetTicketMessagesAsRead(ticket, { syncSeen: false });
 
   if (medias && medias.length > 0) {
     if (!isWhatsAppChannel) {
@@ -59,25 +59,20 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
     await Promise.all(
       medias.map(async (media: Express.Multer.File) => {
-        await SendWhatsAppMedia({
-          media,
-          ticket,
-          body: normalizedBody,
-          quotedMsgId: quotedMsg?.id
-        });
+        await SendWhatsAppMedia({ media, ticket });
       })
     );
   } else {
     const sentMessage = isWhatsAppChannel
-      ? await SendWhatsAppMessage({ body: normalizedBody, ticket, quotedMsg })
-      : await SendChannelMessageService({ body: normalizedBody, ticket, quotedMsg });
+      ? await SendWhatsAppMessage({ body, ticket, quotedMsg })
+      : await SendChannelMessageService({ body, ticket, quotedMsg });
 
     await CreateMessageService({
       messageData: {
         id: sentMessage.id,
         ticketId: ticket.id,
         contactId: ticket.contactId,
-        body: sentMessage.body || normalizedBody,
+        body: sentMessage.body || body,
         fromMe: true,
         read: true,
         mediaType: sentMessage.type,
@@ -112,22 +107,23 @@ export const remove = async (
 
   const message = await DeleteWhatsAppMessage(messageId);
 
-  const companyId = message.ticket?.companyId;
-  if (companyId) {
-    const io = getIO();
-    const ticketRoomName = getCompanyTicketRoom(companyId, message.ticketId);
-    io.to(ticketRoomName).emit("appMessage", {
+  const ticket = await Ticket.findByPk(message.ticketId, {
+    attributes: ["id", "companyId"]
+  });
+
+  if (!ticket) {
+    return res.send();
+  }
+
+  emitToCompanyRooms(
+    (ticket as any).companyId,
+    [getCompanyTicketRoom((ticket as any).companyId, message.ticketId.toString())],
+    "appMessage",
+    {
       action: "update",
       message
-    });
-  } else {
-    // Security hardening: never emit message updates to non-tenant rooms.
-    logger.warn({
-      info: "Skipping message socket emit without companyId",
-      messageId
-    });
-  }
+    }
+  );
 
   return res.send();
 };
-

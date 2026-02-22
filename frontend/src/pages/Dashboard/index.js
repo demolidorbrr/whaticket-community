@@ -83,6 +83,10 @@ const useStyles = makeStyles(theme => ({
 const Dashboard = () => {
   const classes = useStyles();
   const { user } = useContext(AuthContext);
+  // Superadmin deve visualizar os mesmos blocos administrativos do admin.
+  const isAdminLike = ["admin", "superadmin"].includes(
+    (user?.profile || "").toLowerCase()
+  );
   const userQueueIds = useMemo(
     () => (user?.queues || []).map(queue => queue.id),
     [user?.queues]
@@ -92,14 +96,16 @@ const Dashboard = () => {
     status: "open",
     showAll: "true",
     withUnreadMessages: "false",
-    queueIds: JSON.stringify(userQueueIds)
+    queueIds: JSON.stringify(userQueueIds),
+    groupMode: "exclude"
   });
 
   const { count: pendingCount } = useTickets({
     status: "pending",
     showAll: "true",
     withUnreadMessages: "false",
-    queueIds: JSON.stringify(userQueueIds)
+    queueIds: JSON.stringify(userQueueIds),
+    groupMode: "exclude"
   });
 
   const { count: closedCount } = useTickets({
@@ -223,7 +229,7 @@ const Dashboard = () => {
           </Paper>
         </Grid>
 
-        {user.profile === "admin" && (
+        {isAdminLike && (
           <Grid item xs={12}>
             <Paper className={classes.panel}>
               <Typography component="h3" variant="h6" color="primary" className={classes.aiTableTitle}>

@@ -1,10 +1,10 @@
-﻿import { Request, Response } from "express";
+import { Request, Response } from "express";
+import { emitToCompany } from "../libs/socket";
 import CreateQueueService from "../services/QueueService/CreateQueueService";
 import DeleteQueueService from "../services/QueueService/DeleteQueueService";
 import ListQueuesService from "../services/QueueService/ListQueuesService";
 import ShowQueueService from "../services/QueueService/ShowQueueService";
 import UpdateQueueService from "../services/QueueService/UpdateQueueService";
-import { emitByCompany } from "../helpers/SocketEmitByCompany";
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const queues = await ListQueuesService();
@@ -15,7 +15,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const queue = await CreateQueueService(req.body);
 
-  emitByCompany(queue.companyId, "queue", {
+  emitToCompany((queue as any).companyId, "queue", {
     action: "update",
     queue
   });
@@ -39,7 +39,7 @@ export const update = async (
 
   const queue = await UpdateQueueService(queueId, req.body);
 
-  emitByCompany(queue.companyId, "queue", {
+  emitToCompany((queue as any).companyId, "queue", {
     action: "update",
     queue
   });
@@ -55,11 +55,10 @@ export const remove = async (
 
   await DeleteQueueService(queueId);
 
-  emitByCompany(req.user.companyId, "queue", {
+  emitToCompany(req.user.companyId ?? null, "queue", {
     action: "delete",
     queueId: +queueId
   });
 
   return res.status(200).send();
 };
-

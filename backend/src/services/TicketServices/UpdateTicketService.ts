@@ -1,21 +1,19 @@
-import { Op } from "sequelize";
 import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
 import SetTicketMessagesAsRead from "../../helpers/SetTicketMessagesAsRead";
-import { getIO } from "../../libs/socket";
 import {
+  emitToCompanyRooms,
   getCompanyNotificationRoom,
-  getCompanyStatusRoom,
-  getCompanyTicketRoom
-} from "../../libs/socketRooms";
-import AppError from "../../errors/AppError";
-import Queue from "../../models/Queue";
-import Tag from "../../models/Tag";
+  getCompanyTicketRoom,
+  getCompanyTicketsStatusRoom
+} from "../../libs/socket";
 import Ticket from "../../models/Ticket";
-import User from "../../models/User";
-import Whatsapp from "../../models/Whatsapp";
-import { logger } from "../../utils/logger";
 import ShowTicketService from "./ShowTicketService";
 import LogTicketEventService from "./LogTicketEventService";
+import AppError from "../../errors/AppError";
+import User from "../../models/User";
+import Queue from "../../models/Queue";
+import Whatsapp from "../../models/Whatsapp";
+import Tag from "../../models/Tag";
 
 interface TicketData {
   status?: string;
@@ -48,64 +46,6 @@ const UpdateTicketService = async ({
   const ticket = await ShowTicketService(ticketId);
   await SetTicketMessagesAsRead(ticket);
 
-  const ticketCompanyId = ticket.companyId;
-  if (!ticketCompanyId) {
-    throw new AppError("ERR_NO_COMPANY_FOUND", 403);
-  }
-
-  if (queueId !== undefined && queueId !== null) {
-    const queueExists = await Queue.count({
-      where: { id: queueId, companyId: ticketCompanyId }
-    });
-
-    if (!queueExists) {
-      throw new AppError("ERR_NO_PERMISSION", 403);
-    }
-  }
-
-  if (userId !== undefined && userId !== null) {
-    const userExists = await User.count({
-      where: { id: userId, companyId: ticketCompanyId }
-    });
-
-    if (!userExists) {
-      throw new AppError("ERR_NO_PERMISSION", 403);
-    }
-  }
-
-  if (whatsappId !== undefined && whatsappId !== null) {
-    const whatsappExists = await Whatsapp.count({
-      where: { id: whatsappId, companyId: ticketCompanyId }
-    });
-
-    if (!whatsappExists) {
-      throw new AppError("ERR_NO_PERMISSION", 403);
-    }
-  }
-
-  const rawTagIds = Array.isArray(tagIds) ? tagIds.map(Number) : [];
-  if (
-    Array.isArray(tagIds) &&
-    rawTagIds.some(tagId => !Number.isInteger(tagId) || tagId <= 0)
-  ) {
-    throw new AppError("ERR_NO_PERMISSION", 403);
-  }
-
-  const normalizedTagIds = [...new Set(rawTagIds)];
-
-  if (normalizedTagIds.length > 0) {
-    const validTagsCount = await Tag.count({
-      where: {
-        id: { [Op.in]: normalizedTagIds },
-        companyId: ticketCompanyId
-      }
-    });
-
-    if (validTagsCount !== normalizedTagIds.length) {
-      throw new AppError("ERR_NO_PERMISSION", 403);
-    }
-  }
-
   if (whatsappId && ticket.whatsappId !== whatsappId) {
     await CheckContactOpenTickets(ticket.contactId, whatsappId);
   }
@@ -113,9 +53,57 @@ const UpdateTicketService = async ({
   const oldStatus = ticket.status;
   const oldUserId = ticket.user?.id;
   const oldQueueId = ticket.queueId;
+  const companyId = (ticket as any).companyId as number;
 
   if (oldStatus === "closed") {
     await CheckContactOpenTickets(ticket.contact.id, ticket.whatsappId);
+  }
+
+  if (whatsappId) {
+    const targetWhatsapp = await Whatsapp.findByPk(whatsappId, {
+      attributes: ["id", "companyId"]
+    });
+
+    if (!targetWhatsapp || (targetWhatsapp as any).companyId !== companyId) {
+      throw new AppError("ERR_NO_WAPP_FOUND", 404);
+    }
+  }
+
+  if (queueId !== undefined && queueId !== null) {
+    const targetQueue = await Queue.findByPk(queueId, {
+      attributes: ["id", "companyId"]
+    });
+
+    if (!targetQueue || (targetQueue as any).companyId !== companyId) {
+      throw new AppError("ERR_NO_QUEUE_FOUND", 404);
+    }
+  }
+
+  if (userId !== undefined && userId !== null) {
+    const targetUser = await User.findByPk(userId, {
+      attributes: ["id", "companyId"]
+    });
+
+    if (!targetUser || (targetUser as any).companyId !== companyId) {
+      throw new AppError("ERR_NO_USER_FOUND", 404);
+    }
+  }
+
+  if (Array.isArray(tagIds)) {
+    if (tagIds.length > 0) {
+      const tags = await Tag.findAll({
+        where: { id: tagIds },
+        attributes: ["id", "companyId"]
+      });
+
+      const hasCrossTenantTag = tags.some(
+        tag => (tag as any).companyId !== companyId
+      );
+
+      if (tags.length !== tagIds.length || hasCrossTenantTag) {
+        throw new AppError("ERR_NO_TAG_FOUND", 404);
+      }
+    }
   }
 
   await ticket.update({
@@ -132,7 +120,7 @@ const UpdateTicketService = async ({
   }
 
   if (Array.isArray(tagIds)) {
-    await ticket.$set("tags", normalizedTagIds);
+    await ticket.$set("tags", tagIds);
   }
 
   if (status === "closed" && !ticket.resolvedAt) {
@@ -176,42 +164,36 @@ const UpdateTicketService = async ({
     });
   }
 
-  const companyId = updatedTicket.companyId;
-  if (!companyId) {
-    // Security hardening: avoid emitting ticket updates without tenant scope.
-    logger.warn({
-      info: "Skipping ticket update socket emit without companyId",
-      ticketId: updatedTicket.id
-    });
-    return { ticket: updatedTicket, oldStatus, oldUserId };
-  }
-
-  const io = getIO();
-  const oldStatusRoomName = getCompanyStatusRoom(companyId, oldStatus);
-  const updatedStatusRoomName = getCompanyStatusRoom(companyId, updatedTicket.status);
-  const notificationRoomName = getCompanyNotificationRoom(companyId);
-  const ticketRoomName = getCompanyTicketRoom(companyId, ticketId);
-
   if (
     updatedTicket.status !== oldStatus ||
     updatedTicket.user?.id !== oldUserId
   ) {
-    io.to(oldStatusRoomName).emit("ticket", {
-      action: "delete",
-      ticketId: updatedTicket.id
-    });
+    emitToCompanyRooms(
+      companyId,
+      [getCompanyTicketsStatusRoom(companyId, oldStatus)],
+      "ticket",
+      {
+        action: "delete",
+        ticketId: updatedTicket.id
+      }
+    );
   }
 
-  io.to(updatedStatusRoomName)
-    .to(notificationRoomName)
-    .to(ticketRoomName)
-    .emit("ticket", {
+  emitToCompanyRooms(
+    companyId,
+    [
+      getCompanyTicketsStatusRoom(companyId, updatedTicket.status),
+      getCompanyNotificationRoom(companyId),
+      getCompanyTicketRoom(companyId, ticketId.toString())
+    ],
+    "ticket",
+    {
       action: "update",
       ticket: updatedTicket
-    });
+    }
+  );
 
   return { ticket: updatedTicket, oldStatus, oldUserId };
 };
 
 export default UpdateTicketService;
-
