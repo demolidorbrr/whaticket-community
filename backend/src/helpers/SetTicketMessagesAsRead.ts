@@ -1,8 +1,8 @@
-import { getIO } from "../libs/socket";
 import {
+  emitToCompanyRooms,
   getCompanyNotificationRoom,
-  getCompanyStatusRoom
-} from "../libs/socketRooms";
+  getCompanyTicketsStatusRoom
+} from "../libs/socket";
 import Message from "../models/Message";
 import Ticket from "../models/Ticket";
 import { logger } from "../utils/logger";
@@ -34,24 +34,20 @@ const SetTicketMessagesAsRead = async (ticket: Ticket): Promise<void> => {
     );
   }
 
-  if (!ticket.companyId) {
-    // Security hardening: avoid emitting unread updates without tenant scope.
-    logger.warn({
-      info: "Skipping unread update socket emit without companyId",
+  const companyId = (ticket as any).companyId as number;
+
+  emitToCompanyRooms(
+    companyId,
+    [
+      getCompanyTicketsStatusRoom(companyId, ticket.status),
+      getCompanyNotificationRoom(companyId)
+    ],
+    "ticket",
+    {
+      action: "updateUnread",
       ticketId: ticket.id
-    });
-    return;
-  }
-
-  const io = getIO();
-  const statusRoomName = getCompanyStatusRoom(ticket.companyId, ticket.status);
-  const notificationRoomName = getCompanyNotificationRoom(ticket.companyId);
-
-  io.to(statusRoomName).to(notificationRoomName).emit("ticket", {
-    action: "updateUnread",
-    ticketId: ticket.id
-  });
+    }
+  );
 };
 
 export default SetTicketMessagesAsRead;
-

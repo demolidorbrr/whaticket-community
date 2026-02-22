@@ -1,26 +1,26 @@
-﻿const adminPermissions = [
-  "drawer-admin-items:view",
-  "tickets-manager:showall",
-  "user-modal:editProfile",
-  "user-modal:editQueues",
-  "ticket-options:deleteTicket",
-  "ticket-options:transferWhatsapp",
-  "contacts-page:deleteContact"
+// Perfis administrativos compartilham as mesmas permissoes visuais no frontend.
+const adminLikePermissions = [
+	"drawer-admin-items:view",
+	"tickets-manager:showall",
+	"user-modal:editProfile",
+	"user-modal:editQueues",
+	"ticket-options:deleteTicket",
+	"ticket-options:transferWhatsapp",
+	"contacts-page:deleteContact",
 ];
 
 const rules = {
-  user: {
-    static: [],
-  },
+	user: {
+		static: [],
+	},
 
-  admin: {
-    static: adminPermissions,
-  },
+	admin: {
+		static: adminLikePermissions,
+	},
 
-  superadmin: {
-    static: [...adminPermissions, "settings-page:view", "reseller-settings:view"],
-  },
+	superadmin: {
+		static: adminLikePermissions,
+	},
 };
 
 export default rules;
-

@@ -1,4 +1,4 @@
-﻿import qrCode from "qrcode-terminal";
+import qrCode from "qrcode-terminal";
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -9,7 +9,7 @@ import {
   Contact as WbotContact,
   MessageSendOptions
 } from "whatsapp-web.js";
-import { emitByCompany } from "../../../helpers/SocketEmitByCompany";
+import { emitToCompany } from "../../../libs/socket";
 import Whatsapp from "../../../models/Whatsapp";
 import AppError from "../../../errors/AppError";
 import { logger } from "../../../utils/logger";
@@ -37,22 +37,6 @@ interface Session extends Client {
 }
 
 const sessions: Session[] = [];
-const PROFILE_PIC_FETCH_TIMEOUT_MS = Number(
-  process.env.WWEBJS_PROFILE_PIC_TIMEOUT_MS || 2500
-);
-const PROFILE_PIC_CACHE_TTL_MS = Number(
-  process.env.WWEBJS_PROFILE_PIC_CACHE_TTL_MS || 600000
-);
-const DEFAULT_PROTOCOL_TIMEOUT_MS = Number(
-  process.env.CHROME_PROTOCOL_TIMEOUT_MS || 120000
-);
-
-type ProfilePicCacheEntry = {
-  value?: string;
-  expiresAt: number;
-};
-
-const profilePicCache = new Map<string, ProfilePicCacheEntry>();
 
 const clearChromeProfileLocks = (whatsappId: number): void => {
   const sessionPath = path.join(
@@ -88,65 +72,6 @@ const getWbot = (whatsappId: number): Session => {
     throw new AppError("ERR_WAPP_NOT_INITIALIZED");
   }
   return sessions[sessionIndex];
-};
-
-const getProfilePicWithTimeout = async (
-  msgContact: WbotContact
-): Promise<string | undefined> => {
-  const contactId = msgContact?.id?.user;
-  const now = Date.now();
-
-  if (contactId) {
-    const cached = profilePicCache.get(contactId);
-    if (cached && cached.expiresAt > now) {
-      return cached.value;
-    }
-  }
-
-  let timeoutHandle: NodeJS.Timeout | undefined;
-
-  try {
-    const profilePicUrl = await Promise.race<string | undefined>([
-      msgContact.getProfilePicUrl(),
-      new Promise<undefined>(resolve => {
-        timeoutHandle = setTimeout(
-          () => resolve(undefined),
-          PROFILE_PIC_FETCH_TIMEOUT_MS
-        );
-      })
-    ]);
-
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-    }
-
-    const normalized = profilePicUrl || undefined;
-
-    if (contactId) {
-      profilePicCache.set(contactId, {
-        value: normalized,
-        expiresAt: now + PROFILE_PIC_CACHE_TTL_MS
-      });
-    }
-
-    return normalized;
-  } catch (error) {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-    }
-
-    if (contactId) {
-      profilePicCache.set(contactId, {
-        value: undefined,
-        expiresAt: now + 60000
-      });
-    }
-
-    logger.warn(
-      `Could not fetch profile picture for contact ${contactId || "unknown"}: ${error}`
-    );
-    return undefined;
-  }
 };
 
 const mapMessageType = (wbotType: any): MessageType => {
@@ -231,7 +156,7 @@ const resolveChatId = async (
 const convertToContactPayload = async (
   msgContact: WbotContact
 ): Promise<ContactPayload> => {
-  const profilePicUrl = await getProfilePicWithTimeout(msgContact);
+  const profilePicUrl = await msgContact.getProfilePicUrl();
 
   return {
     name: msgContact.name || msgContact.pushname || msgContact.id.user,
@@ -526,14 +451,8 @@ const getProfilePicUrl = async (
   number: string
 ): Promise<string> => {
   const wbot = getWbot(sessionId);
-
-  try {
-    const profilePicUrl = await wbot.getProfilePicUrl(`${number}@c.us`);
-    return profilePicUrl || "";
-  } catch (error) {
-    logger.warn(`Could not fetch profile picture for ${number}: ${error}`);
-    return "";
-  }
+  const profilePicUrl = await wbot.getProfilePicUrl(`${number}@c.us`);
+  return profilePicUrl;
 };
 
 const sendSeen = async (sessionId: number, chatId: string): Promise<void> => {
@@ -608,7 +527,6 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         // headless: false, // TODO make sure chromium closes on session disconnection / delete
         executablePath: process.env.CHROME_BIN || undefined,
         browserWSEndpoint: process.env.CHROME_WS || undefined,
-        protocolTimeout: DEFAULT_PROTOCOL_TIMEOUT_MS,
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
@@ -633,7 +551,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         sessions.push(wbot);
       }
 
-      emitByCompany(whatsapp.companyId, "whatsappSession", {
+      emitToCompany((whatsapp as any).companyId, "whatsappSession", {
         action: "update",
         session: whatsapp
       });
@@ -657,7 +575,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         retries: whatsapp.retries + 1
       });
 
-      emitByCompany(whatsapp.companyId, "whatsappSession", {
+      emitToCompany((whatsapp as any).companyId, "whatsappSession", {
         action: "update",
         session: whatsapp
       });
@@ -673,7 +591,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
           retries: 0
         });
 
-        emitByCompany(whatsapp.companyId, "whatsappSession", {
+        emitToCompany((whatsapp as any).companyId, "whatsappSession", {
           action: "update",
           session: whatsapp
         });
@@ -696,7 +614,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       try {
         await whatsapp.update({ status: newState });
 
-        emitByCompany(whatsapp.companyId, "whatsappSession", {
+        emitToCompany((whatsapp as any).companyId, "whatsappSession", {
           action: "update",
           session: whatsapp
         });
@@ -710,7 +628,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       try {
         await whatsapp.update({ status: "OPENING", session: "" });
 
-        emitByCompany(whatsapp.companyId, "whatsappSession", {
+        emitToCompany((whatsapp as any).companyId, "whatsappSession", {
           action: "update",
           session: whatsapp
         });
@@ -784,7 +702,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         retries: nextRetries
       });
 
-      emitByCompany(whatsapp.companyId, "whatsappSession", {
+      emitToCompany((whatsapp as any).companyId, "whatsappSession", {
         action: "update",
         session: whatsapp
       });
@@ -817,4 +735,3 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   sendSeen,
   fetchChatMessages
 };
-

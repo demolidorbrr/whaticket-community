@@ -1,12 +1,10 @@
 import { Op } from "sequelize";
-import { getIO } from "../../libs/socket";
 import {
+  emitToCompanyRooms,
   getCompanyNotificationRoom,
-  getCompanyStatusRoom
-} from "../../libs/socketRooms";
-import Queue from "../../models/Queue";
+  getCompanyTicketsStatusRoom
+} from "../../libs/socket";
 import Ticket from "../../models/Ticket";
-import { logger } from "../../utils/logger";
 import GetSettingValueService from "../SettingServices/GetSettingValueService";
 import LogTicketEventService from "../TicketServices/LogTicketEventService";
 
@@ -38,9 +36,6 @@ const RunSLAEscalationService = async (): Promise<void> => {
     }
   });
 
-  const io = getIO();
-  const escalationQueueByCompany = new Map<number, number | null>();
-
   for (const ticket of overdueTickets) {
     const previousStatus = ticket.status;
 
@@ -49,28 +44,10 @@ const RunSLAEscalationService = async (): Promise<void> => {
         ? new Date(Date.now() + replyMinutes * 60 * 1000)
         : ticket.slaDueAt;
 
-    let nextQueueId = ticket.queueId;
-    if (escalationQueueId && escalationQueueId > 0 && ticket.companyId) {
-      let resolvedEscalationQueueId = escalationQueueByCompany.get(
-        ticket.companyId
-      );
-
-      if (resolvedEscalationQueueId === undefined) {
-        const queueExists = await Queue.count({
-          where: {
-            id: escalationQueueId,
-            companyId: ticket.companyId
-          }
-        });
-
-        resolvedEscalationQueueId = queueExists ? escalationQueueId : null;
-        escalationQueueByCompany.set(ticket.companyId, resolvedEscalationQueueId);
-      }
-
-      if (resolvedEscalationQueueId) {
-        nextQueueId = resolvedEscalationQueueId;
-      }
-    }
+    const nextQueueId =
+      escalationQueueId && escalationQueueId > 0
+        ? escalationQueueId
+        : ticket.queueId;
 
     await ticket.update({
       status: "pending",
@@ -91,24 +68,21 @@ const RunSLAEscalationService = async (): Promise<void> => {
       }
     });
 
-    if (!ticket.companyId) {
-      // Security hardening: avoid SLA socket emits without tenant scope.
-      logger.warn({
-        info: "Skipping SLA ticket emit without companyId",
-        ticketId: ticket.id
-      });
-      continue;
-    }
+    const companyId = (ticket as any).companyId as number;
 
-    const statusRoomName = getCompanyStatusRoom(ticket.companyId, "pending");
-    const notificationRoomName = getCompanyNotificationRoom(ticket.companyId);
-
-    io.to(statusRoomName).to(notificationRoomName).emit("ticket", {
-      action: "update",
-      ticket
-    });
+    emitToCompanyRooms(
+      companyId,
+      [
+        getCompanyTicketsStatusRoom(companyId, "pending"),
+        getCompanyNotificationRoom(companyId)
+      ],
+      "ticket",
+      {
+        action: "update",
+        ticket
+      }
+    );
   }
 };
 
 export default RunSLAEscalationService;
-

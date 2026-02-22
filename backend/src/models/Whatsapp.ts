@@ -61,6 +61,9 @@ class Whatsapp extends Model<Whatsapp> {
   @Column
   id: number;
 
+  @Column
+  companyId: number;
+
   @AllowNull
   @Column(DataType.TEXT)
   name: string;

@@ -1,26 +1,19 @@
-﻿import { AsyncLocalStorage } from "async_hooks";
+import { AsyncLocalStorage } from "async_hooks";
 
-export interface TenantContextData {
-  companyId: number;
-  profile: string;
+export interface TenantRequestContext {
+  companyId?: number | null;
+  profile?: string;
 }
 
-const tenantContextStorage = new AsyncLocalStorage<TenantContextData>();
+const tenantContextStorage = new AsyncLocalStorage<TenantRequestContext>();
 
-export const runWithTenantContext = async <T>(
-  tenantContext: TenantContextData,
-  callback: () => Promise<T> | T
-): Promise<T> => {
-  return tenantContextStorage.run(tenantContext, callback);
+export const runWithTenantContext = <T>(
+  context: TenantRequestContext,
+  callback: () => T
+): T => {
+  return tenantContextStorage.run(context, callback);
 };
 
-export const setTenantContext = (
-  tenantContext: TenantContextData
-): void => {
-  tenantContextStorage.enterWith(tenantContext);
-};
-
-export const getTenantContext = (): TenantContextData | undefined => {
+export const getTenantContext = (): TenantRequestContext | undefined => {
   return tenantContextStorage.getStore();
 };
-

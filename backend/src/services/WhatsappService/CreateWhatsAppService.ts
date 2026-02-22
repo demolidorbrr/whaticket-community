@@ -1,12 +1,9 @@
 import * as Yup from "yup";
-import { Op } from "sequelize";
 
 import AppError from "../../errors/AppError";
 import Whatsapp from "../../models/Whatsapp";
 import AssociateWhatsappQueue from "./AssociateWhatsappQueue";
 import { getTenantContext } from "../../libs/tenantContext";
-import ValidateCompanyPlanLimitService from "../CompanyServices/ValidateCompanyPlanLimitService";
-import Queue from "../../models/Queue";
 
 interface Request {
   name: string;
@@ -31,27 +28,10 @@ const CreateWhatsAppService = async ({
   isDefault = false
 }: Request): Promise<Response> => {
   const tenantContext = getTenantContext();
+  const companyId = tenantContext?.companyId ?? null;
 
-  if (!tenantContext?.companyId) {
-    throw new AppError("ERR_TENANT_CONTEXT_REQUIRED", 500);
-  }
-
-  await ValidateCompanyPlanLimitService({
-    companyId: tenantContext.companyId,
-    resource: "connections"
-  });
-
-  if (queueIds.length) {
-    const validQueuesCount = await Queue.count({
-      where: {
-        id: { [Op.in]: queueIds },
-        companyId: tenantContext.companyId
-      }
-    });
-
-    if (validQueuesCount !== queueIds.length) {
-      throw new AppError("ERR_INVALID_QUEUE_SELECTION", 400);
-    }
+  if (!companyId) {
+    throw new AppError("ERR_COMPANY_REQUIRED", 400);
   }
 
   const schema = Yup.object().shape({
@@ -63,9 +43,8 @@ const CreateWhatsAppService = async ({
         "This whatsapp name is already used.",
         async value => {
           if (!value) return false;
-          // Nome unico por empresa para evitar conflito entre tenants.
           const nameExists = await Whatsapp.findOne({
-            where: { name: value, companyId: tenantContext.companyId }
+            where: { name: value, companyId }
           });
           return !nameExists;
         }
@@ -79,9 +58,7 @@ const CreateWhatsAppService = async ({
     throw new AppError(err.message);
   }
 
-  const whatsappFound = await Whatsapp.findOne({
-    where: { companyId: tenantContext.companyId }
-  });
+  const whatsappFound = await Whatsapp.findOne({ where: { companyId } });
 
   isDefault = !whatsappFound;
 
@@ -89,7 +66,7 @@ const CreateWhatsAppService = async ({
 
   if (isDefault) {
     oldDefaultWhatsapp = await Whatsapp.findOne({
-      where: { isDefault: true, companyId: tenantContext.companyId }
+      where: { isDefault: true, companyId }
     });
     if (oldDefaultWhatsapp) {
       await oldDefaultWhatsapp.update({ isDefault: false });
@@ -103,11 +80,11 @@ const CreateWhatsAppService = async ({
   const whatsapp = await Whatsapp.create(
     {
       name,
+      companyId,
       status,
       greetingMessage,
       farewellMessage,
-      isDefault,
-      companyId: tenantContext.companyId
+      isDefault
     },
     { include: ["queues"] }
   );
@@ -118,4 +95,3 @@ const CreateWhatsAppService = async ({
 };
 
 export default CreateWhatsAppService;
-

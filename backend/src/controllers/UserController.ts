@@ -1,4 +1,5 @@
-﻿import { Request, Response } from "express";
+import { Request, Response } from "express";
+import { emitToCompany } from "../libs/socket";
 
 import CheckSettingsHelper from "../helpers/CheckSettings";
 import AppError from "../errors/AppError";
@@ -8,8 +9,6 @@ import ListUsersService from "../services/UserServices/ListUsersService";
 import UpdateUserService from "../services/UserServices/UpdateUserService";
 import ShowUserService from "../services/UserServices/ShowUserService";
 import DeleteUserService from "../services/UserServices/DeleteUserService";
-import { isAdminProfile } from "../helpers/CheckUserProfile";
-import { emitByCompany } from "../helpers/SocketEmitByCompany";
 
 type IndexQuery = {
   searchParam: string;
@@ -21,29 +20,23 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
   const { users, count, hasMore } = await ListUsersService({
     searchParam,
-    pageNumber
+    pageNumber,
+    requesterProfile: req.user.profile
   });
 
   return res.json({ users, count, hasMore });
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const {
-    email,
-    password,
-    name,
-    profile,
-    queueIds,
-    whatsappId,
-    companyId
-  } = req.body;
+  const { email, password, name, profile, queueIds, whatsappId, companyId } =
+    req.body;
 
   if (
     req.url === "/signup" &&
     (await CheckSettingsHelper("userCreation")) === "disabled"
   ) {
     throw new AppError("ERR_USER_CREATION_DISABLED", 403);
-  } else if (req.url !== "/signup" && !isAdminProfile(req.user.profile)) {
+  } else if (req.url !== "/signup" && req.user.profile !== "admin") {
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
 
@@ -57,7 +50,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     companyId
   });
 
-  emitByCompany(user.companyId || req.user.companyId, "user", {
+  emitToCompany((user as any).companyId ?? req.user?.companyId ?? null, "user", {
     action: "create",
     user
   });
@@ -77,7 +70,7 @@ export const update = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  if (!isAdminProfile(req.user.profile)) {
+  if (req.user.profile !== "admin") {
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
 
@@ -86,7 +79,7 @@ export const update = async (
 
   const user = await UpdateUserService({ userData, userId });
 
-  emitByCompany(user.companyId || req.user.companyId, "user", {
+  emitToCompany((user as any)?.companyId ?? req.user.companyId ?? null, "user", {
     action: "update",
     user
   });
@@ -100,17 +93,16 @@ export const remove = async (
 ): Promise<Response> => {
   const { userId } = req.params;
 
-  if (!isAdminProfile(req.user.profile)) {
+  if (req.user.profile !== "admin") {
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
 
   await DeleteUserService(userId);
 
-  emitByCompany(req.user.companyId, "user", {
+  emitToCompany(req.user.companyId ?? null, "user", {
     action: "delete",
     userId
   });
 
   return res.status(200).json({ message: "User deleted" });
 };
-

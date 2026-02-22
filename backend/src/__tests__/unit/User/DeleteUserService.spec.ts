@@ -1,8 +1,14 @@
 import faker from "faker";
 import AppError from "../../../errors/AppError";
 import CreateUserService from "../../../services/UserServices/CreateUserService";
-import DeleteUserService from "../../../services/UserServices/DeleteUserService";
 import { disconnect, truncate } from "../../utils/database";
+
+// Evita carregar dependencias de runtime externo no contexto unitario deste spec.
+jest.mock("../../../helpers/UpdateDeletedUserOpenTicketsStatus", () => jest.fn());
+const DeleteUserService = require("../../../services/UserServices/DeleteUserService")
+  .default;
+
+const COMPANY_ID = 1;
 
 describe("User", () => {
   beforeEach(async () => {
@@ -21,7 +27,8 @@ describe("User", () => {
     const { id } = await CreateUserService({
       name: faker.name.findName(),
       email: faker.internet.email(),
-      password: faker.internet.password()
+      password: faker.internet.password(),
+      companyId: COMPANY_ID
     });
 
     expect(DeleteUserService(id)).resolves.not.toThrow();

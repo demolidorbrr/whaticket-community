@@ -5,199 +5,127 @@ import openSocket from "../../services/socket-io";
 import { toast } from "react-toastify";
 
 import { i18n } from "../../translate/i18n";
-import api, { applyAuthToken, readStoredToken } from "../../services/api";
+import api from "../../services/api";
 import toastError from "../../errors/toastError";
 
-const INVALID_TOKEN_ERROR = "ERR_INVALID_TOKEN";
-const LEGACY_INVALID_TOKEN_ERROR =
-  "Invalid token. We'll try to assign a new one on next request";
-const SESSION_EXPIRED_ERROR = "ERR_SESSION_EXPIRED";
-
-const isAuthFailure = error => {
-  const status = error?.response?.status;
-  const backendErrorCode =
-    error?.response?.data?.error || error?.response?.data?.message;
-
-  return (
-    status === 401 ||
-    status === 403 ||
-    backendErrorCode === SESSION_EXPIRED_ERROR ||
-    backendErrorCode === INVALID_TOKEN_ERROR ||
-    backendErrorCode === LEGACY_INVALID_TOKEN_ERROR
-  );
-};
-
 const useAuth = () => {
-  const history = useHistory();
-  const [isAuth, setIsAuth] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState({});
+	const history = useHistory();
+	const [isAuth, setIsAuth] = useState(false);
+	const [loading, setLoading] = useState(true);
+	const [user, setUser] = useState({});
 
-  const clearAuthState = () => {
-    localStorage.removeItem("token");
-    applyAuthToken("");
-    setIsAuth(false);
-    setUser({});
-  };
+	api.interceptors.request.use(
+		config => {
+			const token = localStorage.getItem("token");
+			if (token) {
+				config.headers["Authorization"] = `Bearer ${JSON.parse(token)}`;
+				setIsAuth(true);
+			}
+			return config;
+		},
+		error => {
+			Promise.reject(error);
+		}
+	);
 
-  const getBackendErrorCode = error => {
-    return error?.response?.data?.error || error?.response?.data?.message;
-  };
+	api.interceptors.response.use(
+		response => {
+			return response;
+		},
+		async error => {
+			const originalRequest = error.config;
+			if (error?.response?.status === 403 && !originalRequest._retry) {
+				originalRequest._retry = true;
 
-  useEffect(() => {
-    const requestInterceptor = api.interceptors.request.use(
-      config => {
-        const token = readStoredToken();
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-      },
-      error => Promise.reject(error)
-    );
+				const { data } = await api.post("/auth/refresh_token");
+				if (data) {
+					localStorage.setItem("token", JSON.stringify(data.token));
+					api.defaults.headers.Authorization = `Bearer ${data.token}`;
+				}
+				return api(originalRequest);
+			}
+			if (error?.response?.status === 401) {
+				localStorage.removeItem("token");
+				api.defaults.headers.Authorization = undefined;
+				setIsAuth(false);
+			}
+			return Promise.reject(error);
+		}
+	);
 
-    const responseInterceptor = api.interceptors.response.use(
-      response => response,
-      async error => {
-        const originalRequest = error?.config;
-        const status = error?.response?.status;
-        const backendErrorCode = getBackendErrorCode(error);
-        const isRefreshRequest =
-          originalRequest?.url &&
-          String(originalRequest.url).includes("/auth/refresh_token");
-        const isAuthLoginRequest =
-          originalRequest?.url &&
-          String(originalRequest.url).includes("/auth/login");
-        const isInvalidTokenError =
-          backendErrorCode === INVALID_TOKEN_ERROR ||
-          backendErrorCode === LEGACY_INVALID_TOKEN_ERROR;
-        const hasStoredToken = Boolean(readStoredToken());
+	useEffect(() => {
+		const token = localStorage.getItem("token");
+		(async () => {
+			if (token) {
+				try {
+					const { data } = await api.post("/auth/refresh_token");
+					api.defaults.headers.Authorization = `Bearer ${data.token}`;
+					setIsAuth(true);
+					setUser(data.user);
+				} catch (err) {
+					toastError(err);
+				}
+			}
+			setLoading(false);
+		})();
+	}, []);
 
-        // Em falha de auth em rotas privadas, tenta renovar token e repetir a request uma vez.
-        if (
-          originalRequest &&
-          !originalRequest._retry &&
-          !isRefreshRequest &&
-          !isAuthLoginRequest &&
-          ((status === 403 && isInvalidTokenError) ||
-            (status === 401 && hasStoredToken))
-        ) {
-          originalRequest._retry = true;
+	useEffect(() => {
+		const socket = openSocket();
 
-          try {
-            const { data } = await api.post("/auth/refresh_token");
-            if (data?.token) {
-              localStorage.setItem("token", JSON.stringify(data.token));
-              applyAuthToken(data.token);
-              return api(originalRequest);
-            }
-          } catch (refreshError) {
-            clearAuthState();
-            return Promise.reject(refreshError);
-          }
-        }
+		socket.on("user", data => {
+			if (data.action === "update" && data.user.id === user.id) {
+				setUser(data.user);
+			}
+		});
 
-        if (
-          status === 401 ||
-          (isRefreshRequest &&
-            status === 403 &&
-            (backendErrorCode === SESSION_EXPIRED_ERROR || isInvalidTokenError))
-        ) {
-          clearAuthState();
-        }
+		return () => {
+			socket.disconnect();
+		};
+	}, [user]);
 
-        return Promise.reject(error);
-      }
-    );
+	const handleLogin = async userData => {
+		setLoading(true);
 
-    return () => {
-      // Keep a single interceptor chain to avoid refresh storms and duplicate retries.
-      api.interceptors.request.eject(requestInterceptor);
-      api.interceptors.response.eject(responseInterceptor);
-    };
-  }, []);
+		try {
+			const { data } = await api.post("/auth/login", userData);
+			localStorage.setItem("token", JSON.stringify(data.token));
+			api.defaults.headers.Authorization = `Bearer ${data.token}`;
+			setUser(data.user);
+			setIsAuth(true);
+			toast.success(i18n.t("auth.toasts.success"));
+			history.push("/tickets");
+			setLoading(false);
+		} catch (err) {
+			toastError(err);
+			setLoading(false);
+		}
+	};
 
-  useEffect(() => {
-    const token = readStoredToken();
-    (async () => {
-      if (token) {
-        applyAuthToken(token);
+	const handleLogout = async () => {
+		setLoading(true);
+		const clearLocalSession = () => {
+			setIsAuth(false);
+			setUser({});
+			localStorage.removeItem("token");
+			api.defaults.headers.Authorization = undefined;
+		};
 
-        try {
-          const { data } = await api.post("/auth/refresh_token");
-          applyAuthToken(data.token);
-          setIsAuth(true);
-          setUser(data.user);
-        } catch (err) {
-          clearAuthState();
+		try {
+			await api.delete("/auth/logout");
+		} catch (err) {
+			// Logout deve ser idempotente: se o token expirar, ainda limpamos sessao local.
+			if (![401, 403].includes(err?.response?.status)) {
+				toastError(err);
+			}
+		} finally {
+			clearLocalSession();
+			setLoading(false);
+			history.push("/login");
+		}
+	};
 
-          const backendErrorCode = getBackendErrorCode(err);
-          if (
-            backendErrorCode !== SESSION_EXPIRED_ERROR &&
-            backendErrorCode !== INVALID_TOKEN_ERROR &&
-            backendErrorCode !== LEGACY_INVALID_TOKEN_ERROR
-          ) {
-            toastError(err);
-          }
-        }
-      }
-      setLoading(false);
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (!isAuth || !user?.id) return;
-
-    const socket = openSocket();
-
-    socket.on("user", data => {
-      if (data.action === "update" && data.user.id === user.id) {
-        setUser(data.user);
-      }
-    });
-
-    return () => {
-      socket.disconnect();
-    };
-  }, [isAuth, user?.id]);
-
-  const handleLogin = async userData => {
-    setLoading(true);
-
-    try {
-      const { data } = await api.post("/auth/login", userData);
-      localStorage.setItem("token", JSON.stringify(data.token));
-      applyAuthToken(data.token);
-      setUser(data.user);
-      setIsAuth(true);
-      toast.success(i18n.t("auth.toasts.success"));
-      history.push("/tickets");
-      setLoading(false);
-    } catch (err) {
-      toastError(err);
-      setLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    setLoading(true);
-
-    try {
-      await api.delete("/auth/logout");
-    } catch (err) {
-      // Se a sessao ja expirou no backend, encerra localmente sem exibir erro.
-      if (!isAuthFailure(err)) {
-        toastError(err);
-      }
-    } finally {
-      clearAuthState();
-      setLoading(false);
-      history.push("/login");
-    }
-  };
-
-  return { isAuth, user, loading, handleLogin, handleLogout };
+	return { isAuth, user, loading, handleLogin, handleLogout };
 };
 
 export default useAuth;
-

@@ -1,4 +1,4 @@
-﻿import {
+import {
   Table,
   Column,
   CreatedAt,
@@ -9,62 +9,22 @@
   ForeignKey,
   BelongsTo,
   DataType,
-  Default,
-  BeforeFind,
-  BeforeCount,
-  BeforeBulkUpdate,
-  BeforeBulkDestroy,
-  BeforeCreate,
-  BeforeBulkCreate
+  Default
 } from "sequelize-typescript";
 
 import Ticket from "./Ticket";
 import Contact from "./Contact";
 import User from "./User";
-import Company from "./Company";
-import {
-  applyTenantScope,
-  applyTenantScopeToBulkInstances,
-  applyTenantScopeToInstance
-} from "../helpers/ApplyTenantScope";
 
 @Table
 class Schedule extends Model<Schedule> {
-  @BeforeFind
-  @BeforeCount
-  static applyTenantFilter(options: Record<string, unknown>): void {
-    applyTenantScope(options);
-  }
-
-  @BeforeBulkUpdate
-  @BeforeBulkDestroy
-  static applyTenantFilterToBulkOperations(
-    options: Record<string, unknown>
-  ): void {
-    applyTenantScope(options);
-  }
-
-  @BeforeCreate
-  static assignCompanyId(instance: Schedule): void {
-    applyTenantScopeToInstance(instance);
-  }
-
-  @BeforeBulkCreate
-  static assignCompanyIdToBulk(instances: Schedule[]): void {
-    applyTenantScopeToBulkInstances(instances);
-  }
-
   @PrimaryKey
   @AutoIncrement
   @Column
   id: number;
 
-  @ForeignKey(() => Company)
   @Column
   companyId: number;
-
-  @BelongsTo(() => Company)
-  company: Company;
 
   @ForeignKey(() => Ticket)
   @Column
@@ -111,4 +71,3 @@ class Schedule extends Model<Schedule> {
 }
 
 export default Schedule;
-

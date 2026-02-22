@@ -1,6 +1,7 @@
 import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
+import Contact from "../../models/Contact";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 
 interface Request {
@@ -33,11 +34,27 @@ const ListMessagesService = async ({
     where: { ticketId },
     limit,
     include: [
-      "contact",
+      {
+        model: Contact,
+        as: "contact",
+        where: (ticket as any).companyId
+          ? { companyId: (ticket as any).companyId }
+          : undefined,
+        required: false
+      },
       {
         model: Message,
         as: "quotedMsg",
-        include: ["contact"]
+        include: [
+          {
+            model: Contact,
+            as: "contact",
+            where: (ticket as any).companyId
+              ? { companyId: (ticket as any).companyId }
+              : undefined,
+            required: false
+          }
+        ]
       }
     ],
     offset,

@@ -1,6 +1,6 @@
 ﻿import { Request, Response } from "express";
 
-import { getIO } from "../libs/socket";
+import { emitToCompany } from "../libs/socket";
 import AppError from "../errors/AppError";
 import { isSuperAdminProfile } from "../helpers/CheckUserProfile";
 
@@ -32,8 +32,7 @@ export const update = async (
     value
   });
 
-  const io = getIO();
-  io.emit("settings", {
+  emitToCompany(req.user.companyId ?? null, "settings", {
     action: "update",
     setting
   });

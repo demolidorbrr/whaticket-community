@@ -57,6 +57,9 @@ class Tag extends Model<Tag> {
   @Column
   id: number;
 
+  @Column
+  companyId: number;
+
   @AllowNull(false)
   @Column
   name: string;

@@ -1,4 +1,4 @@
-﻿import { sign } from "jsonwebtoken";
+import { sign } from "jsonwebtoken";
 import authConfig from "../config/auth";
 import User from "../models/User";
 
@@ -10,7 +10,7 @@ export const createAccessToken = (user: User): string => {
       usarname: user.name,
       profile: user.profile,
       id: user.id,
-      companyId: user.companyId
+      companyId: (user as any).companyId ?? null
     },
     secret,
     {
@@ -26,4 +26,3 @@ export const createRefreshToken = (user: User): string => {
     expiresIn: refreshExpiresIn
   });
 };
-

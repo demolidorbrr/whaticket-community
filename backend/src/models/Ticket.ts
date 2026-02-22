@@ -66,6 +66,9 @@ class Ticket extends Model<Ticket> {
   @Column
   id: number;
 
+  @Column
+  companyId: number;
+
   @Column({ defaultValue: "pending" })
   status: string;
 

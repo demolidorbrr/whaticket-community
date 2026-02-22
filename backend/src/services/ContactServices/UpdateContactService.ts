@@ -27,7 +27,7 @@ const UpdateContactService = async ({
 
   const contact = await Contact.findOne({
     where: { id: contactId },
-    attributes: ["id", "name", "number", "email", "profilePicUrl"],
+    attributes: ["id", "name", "number", "email", "profilePicUrl", "companyId"],
     include: ["extraInfo"]
   });
 
@@ -51,6 +51,20 @@ const UpdateContactService = async ({
         }
       })
     );
+  }
+
+  if (number && number !== contact.number) {
+    const existingContact = await Contact.findOne({
+      where: {
+        number,
+        companyId: (contact as any).companyId
+      },
+      attributes: ["id"]
+    });
+
+    if (existingContact && existingContact.id !== contact.id) {
+      throw new AppError("ERR_DUPLICATED_CONTACT");
+    }
   }
 
   await contact.update({

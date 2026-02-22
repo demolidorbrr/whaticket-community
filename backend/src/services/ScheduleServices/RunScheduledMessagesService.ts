@@ -1,12 +1,12 @@
-﻿import { Op } from "sequelize";
+import { Op } from "sequelize";
 
 import Schedule from "../../models/Schedule";
+import { emitToCompany } from "../../libs/socket";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import SendChannelMessageService from "../ChannelServices/SendChannelMessageService";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import { logger } from "../../utils/logger";
-import { emitByCompany } from "../../helpers/SocketEmitByCompany";
 
 let isRunning = false;
 
@@ -53,8 +53,7 @@ const RunScheduledMessagesService = async (): Promise<void> => {
           sentAt: new Date(),
           errorMessage: null
         });
-
-        emitByCompany(schedule.companyId, "schedule", {
+        emitToCompany((schedule as any).companyId ?? (ticket as any).companyId, "schedule", {
           action: "update",
           schedule
         });
@@ -68,8 +67,7 @@ const RunScheduledMessagesService = async (): Promise<void> => {
           status: "failed",
           errorMessage: err instanceof Error ? err.message : "UNKNOWN_ERROR"
         });
-
-        emitByCompany(schedule.companyId, "schedule", {
+        emitToCompany((schedule as any).companyId ?? null, "schedule", {
           action: "update",
           schedule
         });
@@ -81,4 +79,3 @@ const RunScheduledMessagesService = async (): Promise<void> => {
 };
 
 export default RunScheduledMessagesService;
-

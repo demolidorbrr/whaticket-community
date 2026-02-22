@@ -1,8 +1,7 @@
-﻿import * as Yup from "yup";
+import * as Yup from "yup";
 import AppError from "../../errors/AppError";
 import Queue from "../../models/Queue";
 import { getTenantContext } from "../../libs/tenantContext";
-import ValidateCompanyPlanLimitService from "../CompanyServices/ValidateCompanyPlanLimitService";
 
 interface QueueData {
   name: string;
@@ -11,49 +10,20 @@ interface QueueData {
   aiEnabled?: boolean;
   aiMode?: string;
   aiAutoReply?: boolean;
-  aiPrompt?: string | null;
-  aiWebhookUrl?: string | null;
+  aiPrompt?: string;
+  aiWebhookUrl?: string;
 }
-
-const parseBoolean = (value: unknown, fallback = false): boolean => {
-  if (typeof value === "boolean") {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const normalized = value.trim().toLowerCase();
-    if (["true", "1", "enabled", "sim", "yes"].includes(normalized)) {
-      return true;
-    }
-    if (["false", "0", "disabled", "nao", "não", "no"].includes(normalized)) {
-      return false;
-    }
-  }
-
-  if (typeof value === "number") {
-    return value > 0;
-  }
-
-  return fallback;
-};
 
 const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {
   const tenantContext = getTenantContext();
+  const companyId = tenantContext?.companyId ?? null;
 
-  if (!tenantContext?.companyId) {
-    throw new AppError("ERR_TENANT_CONTEXT_REQUIRED", 500);
+  if (!companyId) {
+    throw new AppError("ERR_COMPANY_REQUIRED", 400);
   }
-
-  await ValidateCompanyPlanLimitService({
-    companyId: tenantContext.companyId,
-    resource: "queues"
-  });
 
   const normalizedQueueData = {
     ...queueData,
-    // Normalize booleans to avoid "true"/"false" strings being persisted as false.
-    aiEnabled: parseBoolean(queueData.aiEnabled, false),
-    aiAutoReply: parseBoolean(queueData.aiAutoReply, false),
     aiWebhookUrl: queueData.aiWebhookUrl?.trim() || null,
     aiPrompt: queueData.aiPrompt?.trim() || null
   };
@@ -70,7 +40,7 @@ const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {
         async value => {
           if (value) {
             const queueWithSameName = await Queue.findOne({
-              where: { name: value }
+              where: { name: value, companyId }
             });
 
             return !queueWithSameName;
@@ -109,10 +79,9 @@ const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {
     throw new AppError(err.message);
   }
 
-  const queue = await Queue.create(normalizedQueueData);
+  const queue = await Queue.create({ ...normalizedQueueData, companyId });
 
   return queue;
 };
 
 export default CreateQueueService;
-

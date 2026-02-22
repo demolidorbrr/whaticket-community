@@ -4,6 +4,8 @@ import CreateUserService from "../../../services/UserServices/CreateUserService"
 import ListUsersService from "../../../services/UserServices/ListUsersService";
 import { disconnect, truncate } from "../../utils/database";
 
+const COMPANY_ID = 1;
+
 describe("User", () => {
   beforeEach(async () => {
     await truncate();
@@ -21,7 +23,8 @@ describe("User", () => {
     await CreateUserService({
       name: faker.name.findName(),
       email: faker.internet.email(),
-      password: faker.internet.password()
+      password: faker.internet.password(),
+      companyId: COMPANY_ID
     });
 
     const response = await ListUsersService({

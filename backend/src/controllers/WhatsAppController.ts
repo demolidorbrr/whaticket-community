@@ -1,4 +1,5 @@
-﻿import { Request, Response } from "express";
+import { Request, Response } from "express";
+import { emitToCompany } from "../libs/socket";
 import { StartWhatsAppSession } from "../services/WbotServices/StartWhatsAppSession";
 
 import CreateWhatsAppService from "../services/WhatsappService/CreateWhatsAppService";
@@ -7,7 +8,6 @@ import ListWhatsAppsService from "../services/WhatsappService/ListWhatsAppsServi
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import UpdateWhatsAppService from "../services/WhatsappService/UpdateWhatsAppService";
 import { whatsappProvider } from "../providers/WhatsApp";
-import { emitByCompany } from "../helpers/SocketEmitByCompany";
 
 interface WhatsappData {
   name: string;
@@ -45,13 +45,13 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 
   StartWhatsAppSession(whatsapp);
 
-  emitByCompany(whatsapp.companyId, "whatsapp", {
+  emitToCompany((whatsapp as any).companyId, "whatsapp", {
     action: "update",
     whatsapp
   });
 
   if (oldDefaultWhatsapp) {
-    emitByCompany(oldDefaultWhatsapp.companyId, "whatsapp", {
+    emitToCompany((oldDefaultWhatsapp as any).companyId, "whatsapp", {
       action: "update",
       whatsapp: oldDefaultWhatsapp
     });
@@ -80,13 +80,13 @@ export const update = async (
     whatsappId
   });
 
-  emitByCompany(whatsapp.companyId, "whatsapp", {
+  emitToCompany((whatsapp as any).companyId, "whatsapp", {
     action: "update",
     whatsapp
   });
 
   if (oldDefaultWhatsapp) {
-    emitByCompany(oldDefaultWhatsapp.companyId, "whatsapp", {
+    emitToCompany((oldDefaultWhatsapp as any).companyId, "whatsapp", {
       action: "update",
       whatsapp: oldDefaultWhatsapp
     });
@@ -104,11 +104,10 @@ export const remove = async (
   await DeleteWhatsAppService(whatsappId);
   whatsappProvider.removeSession(+whatsappId);
 
-  emitByCompany(req.user.companyId, "whatsapp", {
+  emitToCompany(req.user.companyId ?? null, "whatsapp", {
     action: "delete",
     whatsappId: +whatsappId
   });
 
   return res.status(200).json({ message: "Whatsapp deleted." });
 };
-

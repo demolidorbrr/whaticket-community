@@ -3,9 +3,7 @@ import { promisify } from "util";
 import { writeFile } from "fs";
 import * as Sentry from "@sentry/node";
 
-import { getIO } from "../libs/socket";
-import { getCompanyTicketRoom } from "../libs/socketRooms";
-import { runWithTenantContext } from "../libs/tenantContext";
+import { emitToCompanyRooms, getCompanyTicketRoom } from "../libs/socket";
 import { logger } from "../utils/logger";
 import { debounce } from "../helpers/Debounce";
 import formatBody from "../helpers/Mustache";
@@ -13,7 +11,6 @@ import formatBody from "../helpers/Mustache";
 import Contact from "../models/Contact";
 import Ticket from "../models/Ticket";
 import Message from "../models/Message";
-import Whatsapp from "../models/Whatsapp";
 
 import CreateMessageService from "../services/MessageServices/CreateMessageService";
 import CreateOrUpdateContactService from "../services/ContactServices/CreateOrUpdateContactService";
@@ -23,6 +20,7 @@ import UpdateTicketService from "../services/TicketServices/UpdateTicketService"
 import CreateContactService from "../services/ContactServices/CreateContactService";
 import ProcessQueueAssistantService from "../services/AIServices/ProcessQueueAssistantService";
 import StartTicketSLAService from "../services/SLAServices/StartTicketSLAService";
+import { runWithTenantContext } from "../libs/tenantContext";
 
 import { whatsappProvider } from "../providers/WhatsApp/whatsappProvider";
 import { MessageType, MessageAck } from "../providers/WhatsApp/types";
@@ -90,26 +88,6 @@ const buildLastMessagePreview = (
   }
 
   return "";
-};
-
-const resolveMessageCreatedAt = (timestamp?: number): Date | undefined => {
-  const numericTimestamp = Number(timestamp);
-
-  if (!Number.isFinite(numericTimestamp) || numericTimestamp <= 0) {
-    return undefined;
-  }
-
-  const timestampInMs =
-    numericTimestamp > 1_000_000_000_000
-      ? numericTimestamp
-      : numericTimestamp * 1000;
-
-  const createdAt = new Date(timestampInMs);
-  if (Number.isNaN(createdAt.getTime())) {
-    return undefined;
-  }
-
-  return createdAt;
 };
 
 export interface ContactPayload {
@@ -233,24 +211,12 @@ const processVcardMessage = async (
 };
 
 const resolveQuotedMessageId = async (
-  quotedMsgId: string | undefined,
-  whatsappId: number
+  quotedMsgId?: string
 ): Promise<string | undefined> => {
   if (!quotedMsgId) return undefined;
 
-  // Security hardening: quoted messages must belong to the same WhatsApp session.
-  const quotedMessage = await Message.findOne({
-    where: { id: quotedMsgId },
-    attributes: ["id"],
-    include: [
-      {
-        model: Ticket,
-        as: "ticket",
-        attributes: ["id"],
-        where: { whatsappId },
-        required: true
-      }
-    ]
+  const quotedMessage = await Message.findByPk(quotedMsgId, {
+    attributes: ["id"]
   });
 
   return quotedMessage ? quotedMsgId : undefined;
@@ -332,66 +298,110 @@ export const handleMessage = async (
   contextPayload: WhatsappContextPayload,
   mediaPayload?: MediaPayload
 ): Promise<void> => {
-  const whatsapp = await Whatsapp.findByPk(contextPayload.whatsappId, {
-    attributes: ["companyId"]
-  });
+  try {
+    const whatsapp = await ShowWhatsAppService(contextPayload.whatsappId);
+    const tenantCompanyId = (whatsapp as any).companyId ?? null;
 
-  if (!whatsapp?.companyId) {
-    logger.error({
-      info: "Error handling message: whatsapp not found",
-      contextPayload
-    });
-    return;
-  }
+    await runWithTenantContext(
+      // Processa toda a mensagem dentro do tenant da conexao recebida.
+      { companyId: tenantCompanyId, profile: "admin" },
+      async () => {
+        const processedMessage = processLocationMessage(messagePayload);
+        const resolvedQuotedMsgId = await resolveQuotedMessageId(
+          processedMessage.quotedMsgId
+        );
 
-  await runWithTenantContext(
-    {
-      companyId: whatsapp.companyId,
-      profile: "system"
-    },
-    async () => {
-      try {
-    const processedMessage = processLocationMessage(messagePayload);
-    const resolvedQuotedMsgId = await resolveQuotedMessageId(
-      processedMessage.quotedMsgId,
-      contextPayload.whatsappId
-    );
-    const messageCreatedAt = resolveMessageCreatedAt(processedMessage.timestamp);
+        if (processedMessage.fromMe) {
+          const existingOutgoingMessage = await Message.findByPk(processedMessage.id);
 
-    if (processedMessage.fromMe) {
-      const existingOutgoingMessage = await Message.findOne({
-        where: { id: processedMessage.id },
-        include: [
-          {
-            model: Ticket,
-            as: "ticket",
-            attributes: ["id"],
-            where: { whatsappId: contextPayload.whatsappId },
-            required: true
+          if (existingOutgoingMessage) {
+            const messageData: any = {
+              id: processedMessage.id,
+              ticketId: existingOutgoingMessage.ticketId,
+              contactId: existingOutgoingMessage.contactId,
+              body: processedMessage.body,
+              fromMe: true,
+              read: true,
+              mediaType: processedMessage.type,
+              quotedMsgId: resolvedQuotedMsgId,
+              ack:
+                processedMessage.ack !== undefined
+                  ? processedMessage.ack
+                  : existingOutgoingMessage.ack
+            };
+
+            const pendingAck = consumePendingAck(processedMessage.id);
+            if (pendingAck !== undefined) {
+              messageData.ack = mergeAck(messageData.ack, pendingAck);
+            }
+
+            if (mediaPayload && processedMessage.hasMedia) {
+              const filename = await saveMediaFile(mediaPayload);
+              messageData.mediaUrl = filename;
+              messageData.body = processedMessage.body || filename;
+              const [mediaType] = mediaPayload.mimetype.split("/");
+              messageData.mediaType = mediaType;
+            }
+
+            await CreateMessageService({ messageData });
+            return;
           }
-        ]
-      });
+        }
 
-      if (existingOutgoingMessage) {
+        const contact = await CreateOrUpdateContactService({
+          name: contactPayload.name,
+          number: contactPayload.number,
+          lid: contactPayload.lid,
+          profilePicUrl: contactPayload.profilePicUrl,
+          isGroup: contactPayload.isGroup
+        });
+
+        let groupContact: Contact | undefined;
+        if (contextPayload.groupContact) {
+          groupContact = await CreateOrUpdateContactService({
+            name: contextPayload.groupContact.name,
+            number: contextPayload.groupContact.number,
+            lid: contextPayload.groupContact.lid,
+            profilePicUrl: contextPayload.groupContact.profilePicUrl,
+            isGroup: contextPayload.groupContact.isGroup
+          });
+        }
+
+        if (
+          contextPayload.unreadMessages === 0 &&
+          whatsapp.farewellMessage &&
+          formatBody(whatsapp.farewellMessage, contact) === processedMessage.body
+        ) {
+          return;
+        }
+
+        const ticket = await FindOrCreateTicketService(
+          contact,
+          contextPayload.whatsappId,
+          contextPayload.unreadMessages,
+          groupContact
+        );
+
+        if (!processedMessage.fromMe) {
+          await StartTicketSLAService(ticket, "system");
+        }
+
         const messageData: any = {
           id: processedMessage.id,
-          ticketId: existingOutgoingMessage.ticketId,
-          contactId: existingOutgoingMessage.contactId,
+          ticketId: ticket.id,
+          contactId: processedMessage.fromMe ? undefined : contact.id,
           body: processedMessage.body,
-          fromMe: true,
-          read: true,
+          fromMe: processedMessage.fromMe,
+          read: processedMessage.fromMe,
           mediaType: processedMessage.type,
           quotedMsgId: resolvedQuotedMsgId,
           ack:
             processedMessage.ack !== undefined
               ? processedMessage.ack
-              : existingOutgoingMessage.ack
+              : processedMessage.fromMe
+                ? 1
+                : 0
         };
-
-        if (messageCreatedAt && !existingOutgoingMessage.createdAt) {
-          messageData.createdAt = messageCreatedAt;
-          messageData.updatedAt = messageCreatedAt;
-        }
 
         const pendingAck = consumePendingAck(processedMessage.id);
         if (pendingAck !== undefined) {
@@ -406,129 +416,53 @@ export const handleMessage = async (
           messageData.mediaType = mediaType;
         }
 
-        await CreateMessageService({ messageData });
-        return;
-      }
-    }
-
-    const contact = await CreateOrUpdateContactService({
-      name: contactPayload.name,
-      number: contactPayload.number,
-      lid: contactPayload.lid,
-      profilePicUrl: contactPayload.profilePicUrl,
-      isGroup: contactPayload.isGroup
-    });
-
-    let groupContact: Contact | undefined;
-    if (contextPayload.groupContact) {
-      groupContact = await CreateOrUpdateContactService({
-        name: contextPayload.groupContact.name,
-        number: contextPayload.groupContact.number,
-        lid: contextPayload.groupContact.lid,
-        profilePicUrl: contextPayload.groupContact.profilePicUrl,
-        isGroup: contextPayload.groupContact.isGroup
-      });
-    }
-
-    const whatsapp = await ShowWhatsAppService(contextPayload.whatsappId);
-    if (
-      contextPayload.unreadMessages === 0 &&
-      whatsapp.farewellMessage &&
-      formatBody(whatsapp.farewellMessage, contact) === processedMessage.body
-    ) {
-      return;
-    }
-
-    const ticket = await FindOrCreateTicketService(
-      contact,
-      contextPayload.whatsappId,
-      contextPayload.unreadMessages,
-      groupContact
-    );
-
-    if (!processedMessage.fromMe) {
-      await StartTicketSLAService(ticket, "system");
-    }
-
-    const messageData: any = {
-      id: processedMessage.id,
-      ticketId: ticket.id,
-      contactId: processedMessage.fromMe ? undefined : contact.id,
-      body: processedMessage.body,
-      fromMe: processedMessage.fromMe,
-      read: processedMessage.fromMe,
-      mediaType: processedMessage.type,
-      quotedMsgId: resolvedQuotedMsgId,
-      ack:
-        processedMessage.ack !== undefined
-          ? processedMessage.ack
-          : processedMessage.fromMe
-            ? 1
-            : 0
-    };
-
-    if (messageCreatedAt) {
-      messageData.createdAt = messageCreatedAt;
-      messageData.updatedAt = messageCreatedAt;
-    }
-
-    const pendingAck = consumePendingAck(processedMessage.id);
-    if (pendingAck !== undefined) {
-      messageData.ack = mergeAck(messageData.ack, pendingAck);
-    }
-
-    if (mediaPayload && processedMessage.hasMedia) {
-      const filename = await saveMediaFile(mediaPayload);
-      messageData.mediaUrl = filename;
-      messageData.body = processedMessage.body || filename;
-      const [mediaType] = mediaPayload.mimetype.split("/");
-      messageData.mediaType = mediaType;
-    }
-
-    const lastMessageText = buildLastMessagePreview(processedMessage, mediaPayload);
-
-    await ticket.update({ lastMessage: lastMessageText });
-
-    await CreateMessageService({ messageData });
-
-    await processVcardMessage(processedMessage);
-
-    if (!processedMessage.fromMe) {
-      await ProcessQueueAssistantService({
-        ticket,
-        messagePayload: processedMessage,
-        contactPayload,
-        whatsappId: contextPayload.whatsappId
-      });
-    }
-
-    if (
-      !ticket.queue &&
-      !contextPayload.groupContact &&
-      !processedMessage.fromMe &&
-      !ticket.userId &&
-      whatsapp.queues.length >= 1
-    ) {
-      await handleQueueLogic(
-        contextPayload.whatsappId,
-        processedMessage.body,
-        ticket,
-        contactPayload
-      );
-    }
-      } catch (err) {
-        Sentry.captureException(err);
-        logger.error({
-          info: "Error handling message",
-          err,
-          messagePayload,
-          contactPayload,
-          contextPayload,
+        const lastMessageText = buildLastMessagePreview(
+          processedMessage,
           mediaPayload
-        });
+        );
+
+        await ticket.update({ lastMessage: lastMessageText });
+
+        await CreateMessageService({ messageData });
+
+        await processVcardMessage(processedMessage);
+
+        if (!processedMessage.fromMe) {
+          await ProcessQueueAssistantService({
+            ticket,
+            messagePayload: processedMessage,
+            contactPayload,
+            whatsappId: contextPayload.whatsappId
+          });
+        }
+
+        if (
+          !ticket.queue &&
+          !contextPayload.groupContact &&
+          !processedMessage.fromMe &&
+          !ticket.userId &&
+          whatsapp.queues.length >= 1
+        ) {
+          await handleQueueLogic(
+            contextPayload.whatsappId,
+            processedMessage.body,
+            ticket,
+            contactPayload
+          );
+        }
       }
-    }
-  );
+    );
+  } catch (err) {
+    Sentry.captureException(err);
+    logger.error({
+      info: "Error handling message",
+      err,
+      messagePayload,
+      contactPayload,
+      contextPayload,
+      mediaPayload
+    });
+  }
 };
 
 export const handleMessageAck = async (
@@ -537,16 +471,9 @@ export const handleMessageAck = async (
 ): Promise<void> => {
   await new Promise(r => setTimeout(r, 500));
 
-  const io = getIO();
-
   try {
     const messageToUpdate = await Message.findByPk(messageId, {
       include: [
-        {
-          model: Ticket,
-          as: "ticket",
-          attributes: ["id", "companyId"]
-        },
         "contact",
         {
           model: Message,
@@ -564,28 +491,30 @@ export const handleMessageAck = async (
     const mergedAck = mergeAck(messageToUpdate.ack, ack);
     await messageToUpdate.update({ ack: mergedAck });
 
-    const ticketCompanyId = messageToUpdate.ticket?.companyId;
-    if (!ticketCompanyId) {
-      // Security hardening: avoid ACK emits without tenant scope.
-      logger.warn({
-        info: "Skipping message ACK socket emit without companyId",
-        messageId
-      });
+    const ticket = await Ticket.findByPk(messageToUpdate.ticketId, {
+      attributes: ["id", "companyId"]
+    });
+
+    if (!ticket) {
       return;
     }
 
-    const ticketRoomName = getCompanyTicketRoom(
-      ticketCompanyId,
-      messageToUpdate.ticketId
+    emitToCompanyRooms(
+      (ticket as any).companyId,
+      [
+        getCompanyTicketRoom(
+          (ticket as any).companyId,
+          messageToUpdate.ticketId.toString()
+        )
+      ],
+      "appMessage",
+      {
+        action: "update",
+        message: messageToUpdate
+      }
     );
-
-    io.to(ticketRoomName).emit("appMessage", {
-      action: "update",
-      message: messageToUpdate
-    });
   } catch (err) {
     Sentry.captureException(err);
     logger.error(`Error handling message ack: ${err}`);
   }
 };
-
