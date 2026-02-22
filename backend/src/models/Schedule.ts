@@ -23,6 +23,9 @@ class Schedule extends Model<Schedule> {
   @Column
   id: number;
 
+  @Column
+  companyId: number;
+
   @ForeignKey(() => Ticket)
   @Column
   ticketId: number;

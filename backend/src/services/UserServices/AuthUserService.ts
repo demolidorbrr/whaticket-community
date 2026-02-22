@@ -12,6 +12,7 @@ interface SerializedUser {
   name: string;
   email: string;
   profile: string;
+  companyId?: number | null;
   queues: Queue[];
 }
 
@@ -40,6 +41,11 @@ const AuthUserService = async ({
   }
 
   if (!(await user.checkPassword(password))) {
+    throw new AppError("ERR_INVALID_CREDENTIALS", 401);
+  }
+
+  const companyId = (user as any).companyId ?? null;
+  if (user.profile !== "superadmin" && !companyId) {
     throw new AppError("ERR_INVALID_CREDENTIALS", 401);
   }
 

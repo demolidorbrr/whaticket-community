@@ -8,7 +8,7 @@ const ShowWhatsAppService = async (id: string | number): Promise<Whatsapp> => {
       {
         model: Queue,
         as: "queues",
-        attributes: ["id", "name", "color", "greetingMessage"]
+        attributes: ["id", "name", "color", "greetingMessage", "companyId"]
       }
     ],
     order: [["queues", "name", "ASC"]]
@@ -17,6 +17,13 @@ const ShowWhatsAppService = async (id: string | number): Promise<Whatsapp> => {
   if (!whatsapp) {
     throw new AppError("ERR_NO_WAPP_FOUND", 404);
   }
+
+  const companyId = (whatsapp as any).companyId;
+  const queues = (whatsapp.queues || []).filter(
+    queue => (queue as any).companyId === companyId
+  );
+
+  (whatsapp as any).setDataValue("queues", queues);
 
   return whatsapp;
 };

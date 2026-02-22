@@ -56,18 +56,23 @@ const UpdateWhatsAppService = async ({
     throw new AppError("ERR_WAPP_GREETING_REQUIRED");
   }
 
+  const whatsapp = await ShowWhatsAppService(whatsappId);
+  const companyId = (whatsapp as any).companyId as number | undefined;
+
+  if (!companyId) {
+    throw new AppError("ERR_COMPANY_REQUIRED", 400);
+  }
+
   let oldDefaultWhatsapp: Whatsapp | null = null;
 
   if (isDefault) {
     oldDefaultWhatsapp = await Whatsapp.findOne({
-      where: { isDefault: true, id: { [Op.not]: whatsappId } }
+      where: { isDefault: true, companyId, id: { [Op.not]: whatsappId } }
     });
     if (oldDefaultWhatsapp) {
       await oldDefaultWhatsapp.update({ isDefault: false });
     }
   }
-
-  const whatsapp = await ShowWhatsAppService(whatsappId);
 
   await whatsapp.update({
     name,

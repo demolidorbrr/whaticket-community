@@ -15,6 +15,7 @@ import Tag from "../models/Tag";
 import TicketTag from "../models/TicketTag";
 import TicketEvent from "../models/TicketEvent";
 import Schedule from "../models/Schedule";
+import { registerTenantHooks } from "../libs/tenantHooks";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -42,5 +43,6 @@ const models = [
 ];
 
 sequelize.addModels(models);
+registerTenantHooks(models as any);
 
 export default sequelize;

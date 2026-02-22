@@ -1,4 +1,8 @@
-import { getIO } from "../libs/socket";
+import {
+  emitToCompanyRooms,
+  getCompanyNotificationRoom,
+  getCompanyTicketsStatusRoom
+} from "../libs/socket";
 import Message from "../models/Message";
 import Ticket from "../models/Ticket";
 import { logger } from "../utils/logger";
@@ -30,11 +34,20 @@ const SetTicketMessagesAsRead = async (ticket: Ticket): Promise<void> => {
     );
   }
 
-  const io = getIO();
-  io.to(ticket.status).to("notification").emit("ticket", {
-    action: "updateUnread",
-    ticketId: ticket.id
-  });
+  const companyId = (ticket as any).companyId as number;
+
+  emitToCompanyRooms(
+    companyId,
+    [
+      getCompanyTicketsStatusRoom(companyId, ticket.status),
+      getCompanyNotificationRoom(companyId)
+    ],
+    "ticket",
+    {
+      action: "updateUnread",
+      ticketId: ticket.id
+    }
+  );
 };
 
 export default SetTicketMessagesAsRead;

@@ -25,6 +25,9 @@ class Queue extends Model<Queue> {
   @Column
   id: number;
 
+  @Column
+  companyId: number;
+
   @AllowNull(false)
   @Unique
   @Column

@@ -1,6 +1,6 @@
 import * as Yup from "yup";
 import { Request, Response } from "express";
-import { getIO } from "../libs/socket";
+import { emitToCompany } from "../libs/socket";
 
 import ListContactsService from "../services/ContactServices/ListContactsService";
 import CreateContactService from "../services/ContactServices/CreateContactService";
@@ -95,8 +95,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     profilePicUrl
   });
 
-  const io = getIO();
-  io.emit("contact", {
+  emitToCompany((contact as any).companyId, "contact", {
     action: "create",
     contact
   });
@@ -138,8 +137,7 @@ export const update = async (
 
   const contact = await UpdateContactService({ contactData, contactId });
 
-  const io = getIO();
-  io.emit("contact", {
+  emitToCompany((contact as any).companyId, "contact", {
     action: "update",
     contact
   });
@@ -155,8 +153,7 @@ export const remove = async (
 
   await DeleteContactService(contactId);
 
-  const io = getIO();
-  io.emit("contact", {
+  emitToCompany(req.user.companyId ?? null, "contact", {
     action: "delete",
     contactId
   });

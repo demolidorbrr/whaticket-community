@@ -1,5 +1,6 @@
 import AppError from "../../errors/AppError";
 import Contact from "../../models/Contact";
+import { getTenantContext } from "../../libs/tenantContext";
 
 interface ExtraInfo {
   name: string;
@@ -20,8 +21,15 @@ const CreateContactService = async ({
   email = "",
   extraInfo = []
 }: Request): Promise<Contact> => {
+  const tenantContext = getTenantContext();
+  const companyId = tenantContext?.companyId ?? null;
+
+  if (!companyId) {
+    throw new AppError("ERR_COMPANY_REQUIRED", 400);
+  }
+
   const numberExists = await Contact.findOne({
-    where: { number }
+    where: { number, companyId }
   });
 
   if (numberExists) {
@@ -32,6 +40,7 @@ const CreateContactService = async ({
     {
       name,
       number,
+      companyId,
       email,
       extraInfo
     },

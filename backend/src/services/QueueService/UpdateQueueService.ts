@@ -28,22 +28,7 @@ const UpdateQueueService = async (
   const { color, name, aiMode, aiWebhookUrl } = normalizedQueueData;
 
   const queueSchema = Yup.object().shape({
-    name: Yup.string()
-      .min(2, "ERR_QUEUE_INVALID_NAME")
-      .test(
-        "Check-unique-name",
-        "ERR_QUEUE_NAME_ALREADY_EXISTS",
-        async value => {
-          if (value) {
-            const queueWithSameName = await Queue.findOne({
-              where: { name: value, id: { [Op.not]: queueId } }
-            });
-
-            return !queueWithSameName;
-          }
-          return true;
-        }
-      ),
+    name: Yup.string().min(2, "ERR_QUEUE_INVALID_NAME"),
     color: Yup.string()
       .required("ERR_QUEUE_INVALID_COLOR")
       .test("Check-color", "ERR_QUEUE_INVALID_COLOR", async value => {
@@ -76,6 +61,21 @@ const UpdateQueueService = async (
   }
 
   const queue = await ShowQueueService(queueId);
+  const companyId = (queue as any).companyId as number | undefined;
+
+  if (!companyId) {
+    throw new AppError("ERR_COMPANY_REQUIRED", 400);
+  }
+
+  if (name) {
+    const queueWithSameName = await Queue.findOne({
+      where: { name, companyId, id: { [Op.not]: queueId } }
+    });
+
+    if (queueWithSameName) {
+      throw new AppError("ERR_QUEUE_NAME_ALREADY_EXISTS");
+    }
+  }
 
   await queue.update(normalizedQueueData);
 

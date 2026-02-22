@@ -1,8 +1,14 @@
-import { getIO } from "../../libs/socket";
+import {
+  emitToCompanyRooms,
+  getCompanyNotificationRoom,
+  getCompanyTicketRoom,
+  getCompanyTicketsStatusRoom
+} from "../../libs/socket";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
 import User from "../../models/User";
+import Contact from "../../models/Contact";
 
 interface MessageData {
   id: string;
@@ -25,9 +31,19 @@ const CreateMessageService = async ({
 }: Request): Promise<Message> => {
   await Message.upsert(messageData);
 
+  const ticketReference = await Ticket.findByPk(messageData.ticketId, {
+    attributes: ["id", "companyId"]
+  });
+  const companyId = (ticketReference as any)?.companyId as number | undefined;
+
   const message = await Message.findByPk(messageData.id, {
     include: [
-      "contact",
+      {
+        model: Contact,
+        as: "contact",
+        where: companyId ? { companyId } : undefined,
+        required: false
+      },
       {
         model: Ticket,
         as: "ticket",
@@ -49,7 +65,14 @@ const CreateMessageService = async ({
       {
         model: Message,
         as: "quotedMsg",
-        include: ["contact"]
+        include: [
+          {
+            model: Contact,
+            as: "contact",
+            where: companyId ? { companyId } : undefined,
+            required: false
+          }
+        ]
       }
     ]
   });
@@ -64,16 +87,23 @@ const CreateMessageService = async ({
     lastMessageAtTs: new Date(message.createdAt).getTime()
   };
 
-  const io = getIO();
-  io.to(message.ticketId.toString())
-    .to(message.ticket.status)
-    .to("notification")
-    .emit("appMessage", {
+  const messageCompanyId = (message.ticket as any).companyId as number;
+
+  emitToCompanyRooms(
+    messageCompanyId,
+    [
+      getCompanyTicketRoom(messageCompanyId, message.ticketId.toString()),
+      getCompanyTicketsStatusRoom(messageCompanyId, message.ticket.status),
+      getCompanyNotificationRoom(messageCompanyId)
+    ],
+    "appMessage",
+    {
       action: "create",
       message,
       ticket: ticketPayload,
       contact: message.ticket.contact
-    });
+    }
+  );
 
   return message;
 };

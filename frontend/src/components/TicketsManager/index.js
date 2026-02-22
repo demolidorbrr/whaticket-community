@@ -98,7 +98,10 @@ const TicketsManager = () => {
   const [openCount, setOpenCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [groupsCount, setGroupsCount] = useState(0);
-  const isAdmin = user.profile?.toUpperCase() === "ADMIN";
+  // Superadmin deve operar com as mesmas capacidades do admin neste gerenciador.
+  const isAdmin = ["ADMIN", "SUPERADMIN"].includes(
+    user.profile?.toUpperCase()
+  );
   const userQueueIds = user.queues.map((q) => q.id);
   const [availableQueues, setAvailableQueues] = useState(user?.queues || []);
   const [selectedQueueIds, setSelectedQueueIds] = useState(

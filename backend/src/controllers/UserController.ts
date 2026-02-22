@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getIO } from "../libs/socket";
+import { emitToCompany } from "../libs/socket";
 
 import CheckSettingsHelper from "../helpers/CheckSettings";
 import AppError from "../errors/AppError";
@@ -20,14 +20,16 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
   const { users, count, hasMore } = await ListUsersService({
     searchParam,
-    pageNumber
+    pageNumber,
+    requesterProfile: req.user.profile
   });
 
   return res.json({ users, count, hasMore });
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const { email, password, name, profile, queueIds, whatsappId } = req.body;
+  const { email, password, name, profile, queueIds, whatsappId, companyId } =
+    req.body;
 
   if (
     req.url === "/signup" &&
@@ -44,11 +46,11 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     name,
     profile,
     queueIds,
-    whatsappId
+    whatsappId,
+    companyId
   });
 
-  const io = getIO();
-  io.emit("user", {
+  emitToCompany((user as any).companyId ?? req.user?.companyId ?? null, "user", {
     action: "create",
     user
   });
@@ -77,8 +79,7 @@ export const update = async (
 
   const user = await UpdateUserService({ userData, userId });
 
-  const io = getIO();
-  io.emit("user", {
+  emitToCompany((user as any)?.companyId ?? req.user.companyId ?? null, "user", {
     action: "update",
     user
   });
@@ -98,8 +99,7 @@ export const remove = async (
 
   await DeleteUserService(userId);
 
-  const io = getIO();
-  io.emit("user", {
+  emitToCompany(req.user.companyId ?? null, "user", {
     action: "delete",
     userId
   });

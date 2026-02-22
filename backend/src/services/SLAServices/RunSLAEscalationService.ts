@@ -1,5 +1,9 @@
 import { Op } from "sequelize";
-import { getIO } from "../../libs/socket";
+import {
+  emitToCompanyRooms,
+  getCompanyNotificationRoom,
+  getCompanyTicketsStatusRoom
+} from "../../libs/socket";
 import Ticket from "../../models/Ticket";
 import GetSettingValueService from "../SettingServices/GetSettingValueService";
 import LogTicketEventService from "../TicketServices/LogTicketEventService";
@@ -31,8 +35,6 @@ const RunSLAEscalationService = async (): Promise<void> => {
       slaDueAt: { [Op.lt]: new Date() }
     }
   });
-
-  const io = getIO();
 
   for (const ticket of overdueTickets) {
     const previousStatus = ticket.status;
@@ -66,10 +68,20 @@ const RunSLAEscalationService = async (): Promise<void> => {
       }
     });
 
-    io.to("pending").to("notification").emit("ticket", {
-      action: "update",
-      ticket
-    });
+    const companyId = (ticket as any).companyId as number;
+
+    emitToCompanyRooms(
+      companyId,
+      [
+        getCompanyTicketsStatusRoom(companyId, "pending"),
+        getCompanyNotificationRoom(companyId)
+      ],
+      "ticket",
+      {
+        action: "update",
+        ticket
+      }
+    );
   }
 };
 

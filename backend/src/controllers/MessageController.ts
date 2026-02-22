@@ -1,8 +1,9 @@
 import { Request, Response } from "express";
 
 import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
-import { getIO } from "../libs/socket";
+import { emitToCompanyRooms, getCompanyTicketRoom } from "../libs/socket";
 import Message from "../models/Message";
+import Ticket from "../models/Ticket";
 
 import ListMessagesService from "../services/MessageServices/ListMessagesService";
 import CreateMessageService from "../services/MessageServices/CreateMessageService";
@@ -104,11 +105,23 @@ export const remove = async (
 
   const message = await DeleteWhatsAppMessage(messageId);
 
-  const io = getIO();
-  io.to(message.ticketId.toString()).emit("appMessage", {
-    action: "update",
-    message
+  const ticket = await Ticket.findByPk(message.ticketId, {
+    attributes: ["id", "companyId"]
   });
+
+  if (!ticket) {
+    return res.send();
+  }
+
+  emitToCompanyRooms(
+    (ticket as any).companyId,
+    [getCompanyTicketRoom((ticket as any).companyId, message.ticketId.toString())],
+    "appMessage",
+    {
+      action: "update",
+      message
+    }
+  );
 
   return res.send();
 };

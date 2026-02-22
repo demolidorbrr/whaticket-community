@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getIO } from "../libs/socket";
+import { emitToCompany } from "../libs/socket";
 import CreateQueueService from "../services/QueueService/CreateQueueService";
 import DeleteQueueService from "../services/QueueService/DeleteQueueService";
 import ListQueuesService from "../services/QueueService/ListQueuesService";
@@ -15,8 +15,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const queue = await CreateQueueService(req.body);
 
-  const io = getIO();
-  io.emit("queue", {
+  emitToCompany((queue as any).companyId, "queue", {
     action: "update",
     queue
   });
@@ -40,8 +39,7 @@ export const update = async (
 
   const queue = await UpdateQueueService(queueId, req.body);
 
-  const io = getIO();
-  io.emit("queue", {
+  emitToCompany((queue as any).companyId, "queue", {
     action: "update",
     queue
   });
@@ -57,8 +55,7 @@ export const remove = async (
 
   await DeleteQueueService(queueId);
 
-  const io = getIO();
-  io.emit("queue", {
+  emitToCompany(req.user.companyId ?? null, "queue", {
     action: "delete",
     queueId: +queueId
   });

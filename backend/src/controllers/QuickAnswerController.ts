@@ -1,6 +1,6 @@
 import * as Yup from "yup";
 import { Request, Response } from "express";
-import { getIO } from "../libs/socket";
+import { emitToCompany } from "../libs/socket";
 
 import ListQuickAnswerService from "../services/QuickAnswerService/ListQuickAnswerService";
 import CreateQuickAnswerService from "../services/QuickAnswerService/CreateQuickAnswerService";
@@ -49,8 +49,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     ...newQuickAnswer
   });
 
-  const io = getIO();
-  io.emit("quickAnswer", {
+  emitToCompany((quickAnswer as any).companyId, "quickAnswer", {
     action: "create",
     quickAnswer
   });
@@ -90,8 +89,7 @@ export const update = async (
     quickAnswerId
   });
 
-  const io = getIO();
-  io.emit("quickAnswer", {
+  emitToCompany((quickAnswer as any).companyId, "quickAnswer", {
     action: "update",
     quickAnswer
   });
@@ -107,8 +105,7 @@ export const remove = async (
 
   await DeleteQuickAnswerService(quickAnswerId);
 
-  const io = getIO();
-  io.emit("quickAnswer", {
+  emitToCompany(req.user.companyId ?? null, "quickAnswer", {
     action: "delete",
     quickAnswerId
   });

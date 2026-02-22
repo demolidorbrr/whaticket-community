@@ -16,6 +16,9 @@ class QuickAnswer extends Model<QuickAnswer> {
   @Column
   id: number;
 
+  @Column
+  companyId: number;
+
   @Column(DataType.TEXT)
   shortcut: string;
 

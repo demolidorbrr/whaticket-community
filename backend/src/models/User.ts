@@ -29,6 +29,9 @@ class User extends Model<User> {
   id: number;
 
   @Column
+  companyId: number;
+
+  @Column
   name: string;
 
   @Column

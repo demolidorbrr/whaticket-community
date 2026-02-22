@@ -4,18 +4,41 @@ import Queue from "../../models/Queue";
 import Whatsapp from "../../models/Whatsapp";
 
 const ShowUserService = async (id: string | number): Promise<User> => {
+  const userReference = await User.findByPk(id, {
+    attributes: ["id", "companyId"]
+  });
+
+  if (!userReference) {
+    throw new AppError("ERR_NO_USER_FOUND", 404);
+  }
+
+  const companyId = (userReference as any).companyId as number | undefined;
+
   const user = await User.findByPk(id, {
     attributes: [
       "name",
       "id",
       "email",
       "profile",
+      "companyId",
       "tokenVersion",
       "whatsappId"
     ],
     include: [
-      { model: Queue, as: "queues", attributes: ["id", "name", "color"] },
-      { model: Whatsapp, as: "whatsapp", attributes: ["id", "name"] }
+      {
+        model: Queue,
+        as: "queues",
+        where: companyId ? { companyId } : undefined,
+        required: false,
+        attributes: ["id", "name", "color"]
+      },
+      {
+        model: Whatsapp,
+        as: "whatsapp",
+        where: companyId ? { companyId } : undefined,
+        required: false,
+        attributes: ["id", "name"]
+      }
     ],
     order: [[{ model: Queue, as: "queues" }, "name", "asc"]]
   });

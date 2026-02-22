@@ -1,7 +1,9 @@
-import { getIO } from "../../libs/socket";
+import { emitToCompany } from "../../libs/socket";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
 import { logger } from "../../utils/logger";
+import { getTenantContext } from "../../libs/tenantContext";
+import AppError from "../../errors/AppError";
 
 interface ExtraInfo {
   name: string;
@@ -20,9 +22,13 @@ interface Request {
 }
 
 const emitContact = (action: "update" | "create", contact: Contact) => {
-  const io = getIO();
+  const context = getTenantContext();
+  const contactCompanyId = (contact as any).companyId;
 
-  io.emit("contact", { action, contact });
+  emitToCompany(contactCompanyId ?? context?.companyId ?? null, "contact", {
+    action,
+    contact
+  });
 };
 
 const CreateOrUpdateContactService = async ({
@@ -35,6 +41,13 @@ const CreateOrUpdateContactService = async ({
   email = "",
   extraInfo = []
 }: Request): Promise<Contact> => {
+  const context = getTenantContext();
+  const companyId = context?.companyId ?? null;
+
+  if (!companyId) {
+    throw new AppError("ERR_COMPANY_REQUIRED", 400);
+  }
+
   const number =
     isGroup || keepNumberFormat
       ? rawNumber
@@ -42,8 +55,8 @@ const CreateOrUpdateContactService = async ({
   if (!number && !lid) throw new Error("Either number or lid must be provided");
 
   const [contactByNumber, contactByLid] = await Promise.all([
-    number ? Contact.findOne({ where: { number } }) : null,
-    lid ? Contact.findOne({ where: { lid } }) : null
+    number ? Contact.findOne({ where: { number, companyId } }) : null,
+    lid ? Contact.findOne({ where: { lid, companyId } }) : null
   ]);
 
   const shouldMerge =
@@ -52,7 +65,7 @@ const CreateOrUpdateContactService = async ({
   if (shouldMerge) {
     await Ticket.update(
       { contactId: contactByNumber.id },
-      { where: { contactId: contactByLid.id } }
+      { where: { contactId: contactByLid.id, companyId } }
     );
 
     await contactByLid.destroy();
@@ -97,6 +110,7 @@ const CreateOrUpdateContactService = async ({
   const created = await Contact.create({
     name,
     number,
+    companyId,
     lid,
     profilePicUrl,
     email,

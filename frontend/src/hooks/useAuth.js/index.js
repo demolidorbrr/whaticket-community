@@ -104,18 +104,24 @@ const useAuth = () => {
 
 	const handleLogout = async () => {
 		setLoading(true);
-
-		try {
-			await api.delete("/auth/logout");
+		const clearLocalSession = () => {
 			setIsAuth(false);
 			setUser({});
 			localStorage.removeItem("token");
 			api.defaults.headers.Authorization = undefined;
+		};
+
+		try {
+			await api.delete("/auth/logout");
+		} catch (err) {
+			// Logout deve ser idempotente: se o token expirar, ainda limpamos sessao local.
+			if (![401, 403].includes(err?.response?.status)) {
+				toastError(err);
+			}
+		} finally {
+			clearLocalSession();
 			setLoading(false);
 			history.push("/login");
-		} catch (err) {
-			toastError(err);
-			setLoading(false);
 		}
 	};
 

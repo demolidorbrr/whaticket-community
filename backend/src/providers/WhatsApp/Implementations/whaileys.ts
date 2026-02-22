@@ -34,7 +34,7 @@ import { HttpsProxyAgent } from "https-proxy-agent";
 import NodeCache from "node-cache";
 
 import Whatsapp from "../../../models/Whatsapp";
-import { getIO } from "../../../libs/socket";
+import { emitToCompany } from "../../../libs/socket";
 import { logger } from "../../../utils/logger";
 import AppError from "../../../errors/AppError";
 import StoreWppSessionKeys from "../../../services/WppKeyServices/StoreWppSessionKeys";
@@ -875,7 +875,6 @@ const removeSession = async (whatsappId: number): Promise<void> => {
 
 const init = async (whatsapp: Whatsapp): Promise<void> => {
   const sessionId = whatsapp.id;
-  const io = getIO();
 
   const { state } = await useSessionAuthState(whatsapp);
   const store = makeInMemoryStore({ logger: whaileyLogger });
@@ -1058,7 +1057,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
         const updatedWhatsapp = await Whatsapp.findByPk(sessionId);
         if (updatedWhatsapp) {
-          io.emit("whatsappSession", {
+          emitToCompany((updatedWhatsapp as any).companyId, "whatsappSession", {
             action: "update",
             session: updatedWhatsapp
           });
@@ -1081,7 +1080,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
         const updatedWhatsapp = await Whatsapp.findByPk(sessionId);
         if (updatedWhatsapp) {
-          io.emit("whatsappSession", {
+          emitToCompany((updatedWhatsapp as any).companyId, "whatsappSession", {
             action: "update",
             session: updatedWhatsapp
           });
@@ -1098,7 +1097,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         await flushPendingCredsSave(sessionId);
 
         await whatsapp.update({ status: "OPENING" });
-        io.emit("whatsappSession", {
+        emitToCompany((whatsapp as any).companyId, "whatsappSession", {
           action: "update",
           session: whatsapp
         });
@@ -1124,7 +1123,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
       const updatedWhatsapp = await Whatsapp.findByPk(sessionId);
       if (updatedWhatsapp) {
-        io.emit("whatsappSession", {
+        emitToCompany((updatedWhatsapp as any).companyId, "whatsappSession", {
           action: "update",
           session: updatedWhatsapp
         });
@@ -1139,7 +1138,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         status: "qrcode"
       });
 
-      io.emit("whatsappSession", {
+      emitToCompany((whatsapp as any).companyId, "whatsappSession", {
         action: "update",
         session: whatsapp
       });
@@ -1227,7 +1226,7 @@ const logout = async (sessionId: number): Promise<void> => {
 
     const updatedWhatsapp = await Whatsapp.findByPk(sessionId);
     if (updatedWhatsapp) {
-      getIO().emit("whatsappSession", {
+      emitToCompany((updatedWhatsapp as any).companyId, "whatsappSession", {
         action: "update",
         session: updatedWhatsapp
       });

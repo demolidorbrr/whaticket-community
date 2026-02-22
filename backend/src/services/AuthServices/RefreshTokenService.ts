@@ -36,6 +36,12 @@ export const RefreshTokenService = async (
       throw new AppError("ERR_SESSION_EXPIRED", 401);
     }
 
+    const companyId = (user as any).companyId ?? null;
+    if (user.profile !== "superadmin" && !companyId) {
+      res.clearCookie("jrt");
+      throw new AppError("ERR_SESSION_EXPIRED", 401);
+    }
+
     const newToken = createAccessToken(user);
     const refreshToken = createRefreshToken(user);
 

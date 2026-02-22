@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getIO } from "../libs/socket";
+import { emitToCompany } from "../libs/socket";
 
 import ListSchedulesService from "../services/ScheduleServices/ListSchedulesService";
 import CreateScheduleService from "../services/ScheduleServices/CreateScheduleService";
@@ -37,8 +37,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
   const schedule = await ShowScheduleService(createdSchedule.id);
 
-  const io = getIO();
-  io.emit("schedule", {
+  emitToCompany((schedule as any).companyId ?? req.user.companyId ?? null, "schedule", {
     action: "create",
     schedule
   });
@@ -57,8 +56,7 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
     status
   });
 
-  const io = getIO();
-  io.emit("schedule", {
+  emitToCompany((schedule as any).companyId ?? req.user.companyId ?? null, "schedule", {
     action: "update",
     schedule
   });
@@ -70,8 +68,7 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
   const { scheduleId } = req.params;
   await DeleteScheduleService(scheduleId);
 
-  const io = getIO();
-  io.emit("schedule", {
+  emitToCompany(req.user.companyId ?? null, "schedule", {
     action: "delete",
     scheduleId: Number(scheduleId)
   });

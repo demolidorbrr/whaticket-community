@@ -134,7 +134,7 @@ const messages = {
           importMessage: "Deseja importas todos os contatos do telefone?",
         },
         buttons: {
-          import: "Importar Contatos",
+          import: "Importar CSV",
           add: "Adicionar Contato",
         },
         table: {
@@ -448,6 +448,11 @@ const messages = {
         ERR_USER_CREATION_DISABLED:
           "A criação do usuário foi desabilitada pelo administrador.",
         ERR_NO_PERMISSION: "Você não tem permissão para acessar este recurso.",
+        ERR_COMPANY_REQUIRED: "Não foi possível identificar a empresa da sessão.",
+        ERR_NO_COMPANY_CONTEXT:
+          "Não foi possível identificar a empresa da sessão.",
+        ERR_CHANNEL_FORBIDDEN_COMPANY:
+          "Webhook bloqueado: empresa informada não corresponde ao canal.",
         ERR_DUPLICATED_CONTACT: "Já existe um contato com este número.",
         ERR_NO_SETTING_FOUND: "Nenhuma configuração encontrada com este ID.",
         ERR_NO_CONTACT_FOUND: "Nenhum contato encontrado com este ID.",
@@ -462,6 +467,10 @@ const messages = {
           "Esta cor já está em uso, escolha outra.",
         ERR_WAPP_GREETING_REQUIRED:
           "A mensagem de saudação é obrigatório quando há mais de uma fila.",
+        ERR_CONTACTS_CSV_REQUIRED:
+          "Selecione um arquivo CSV para importar os contatos.",
+        ERR_CONTACTS_CSV_PHONE_COLUMN_NOT_FOUND:
+          "Arquivo CSV invalido: nao encontrei colunas de telefone.",
       },
     },
   },

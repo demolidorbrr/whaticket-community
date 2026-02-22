@@ -3,6 +3,7 @@ import * as Yup from "yup";
 import AppError from "../../errors/AppError";
 import Whatsapp from "../../models/Whatsapp";
 import AssociateWhatsappQueue from "./AssociateWhatsappQueue";
+import { getTenantContext } from "../../libs/tenantContext";
 
 interface Request {
   name: string;
@@ -26,6 +27,13 @@ const CreateWhatsAppService = async ({
   farewellMessage,
   isDefault = false
 }: Request): Promise<Response> => {
+  const tenantContext = getTenantContext();
+  const companyId = tenantContext?.companyId ?? null;
+
+  if (!companyId) {
+    throw new AppError("ERR_COMPANY_REQUIRED", 400);
+  }
+
   const schema = Yup.object().shape({
     name: Yup.string()
       .required()
@@ -36,7 +44,7 @@ const CreateWhatsAppService = async ({
         async value => {
           if (!value) return false;
           const nameExists = await Whatsapp.findOne({
-            where: { name: value }
+            where: { name: value, companyId }
           });
           return !nameExists;
         }
@@ -50,7 +58,7 @@ const CreateWhatsAppService = async ({
     throw new AppError(err.message);
   }
 
-  const whatsappFound = await Whatsapp.findOne();
+  const whatsappFound = await Whatsapp.findOne({ where: { companyId } });
 
   isDefault = !whatsappFound;
 
@@ -58,7 +66,7 @@ const CreateWhatsAppService = async ({
 
   if (isDefault) {
     oldDefaultWhatsapp = await Whatsapp.findOne({
-      where: { isDefault: true }
+      where: { isDefault: true, companyId }
     });
     if (oldDefaultWhatsapp) {
       await oldDefaultWhatsapp.update({ isDefault: false });
@@ -72,6 +80,7 @@ const CreateWhatsAppService = async ({
   const whatsapp = await Whatsapp.create(
     {
       name,
+      companyId,
       status,
       greetingMessage,
       farewellMessage,

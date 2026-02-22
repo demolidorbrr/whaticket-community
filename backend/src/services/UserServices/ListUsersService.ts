@@ -6,6 +6,7 @@ import Whatsapp from "../../models/Whatsapp";
 interface Request {
   searchParam?: string;
   pageNumber?: string | number;
+  requesterProfile?: string;
 }
 
 interface Response {
@@ -16,9 +17,10 @@ interface Response {
 
 const ListUsersService = async ({
   searchParam = "",
-  pageNumber = "1"
+  pageNumber = "1",
+  requesterProfile = "user"
 }: Request): Promise<Response> => {
-  const whereCondition = {
+  const whereCondition: any = {
     [Op.or]: [
       {
         "$User.name$": Sequelize.where(
@@ -30,19 +32,47 @@ const ListUsersService = async ({
       { email: { [Op.like]: `%${searchParam.toLowerCase()}%` } }
     ]
   };
+
+  if (requesterProfile !== "superadmin") {
+    whereCondition.profile = {
+      [Op.ne]: "superadmin"
+    };
+  }
   const limit = 20;
   const offset = limit * (+pageNumber - 1);
 
   const { count, rows: users } = await User.findAndCountAll({
     where: whereCondition,
-    attributes: ["name", "id", "email", "profile", "createdAt"],
+    attributes: ["name", "id", "email", "profile", "companyId", "createdAt"],
     limit,
     offset,
     order: [["createdAt", "DESC"]],
     include: [
-      { model: Queue, as: "queues", attributes: ["id", "name", "color"] },
-      { model: Whatsapp, as: "whatsapp", attributes: ["id", "name"] }
+      {
+        model: Queue,
+        as: "queues",
+        attributes: ["id", "name", "color", "companyId"]
+      },
+      {
+        model: Whatsapp,
+        as: "whatsapp",
+        attributes: ["id", "name", "companyId"]
+      }
     ]
+  });
+
+  users.forEach(user => {
+    const companyId = (user as any).companyId;
+    const queues = (user.queues || []).filter(
+      queue => (queue as any).companyId === companyId
+    );
+
+    (user as any).setDataValue("queues", queues);
+
+    const whatsapp = user.whatsapp;
+    if (whatsapp && (whatsapp as any).companyId !== companyId) {
+      (user as any).setDataValue("whatsapp", null);
+    }
   });
 
   const hasMore = count > offset + users.length;

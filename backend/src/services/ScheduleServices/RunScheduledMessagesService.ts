@@ -1,7 +1,7 @@
 import { Op } from "sequelize";
 
 import Schedule from "../../models/Schedule";
-import { getIO } from "../../libs/socket";
+import { emitToCompany } from "../../libs/socket";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import SendChannelMessageService from "../ChannelServices/SendChannelMessageService";
@@ -15,7 +15,6 @@ const RunScheduledMessagesService = async (): Promise<void> => {
   isRunning = true;
 
   try {
-    const io = getIO();
     const schedules = await Schedule.findAll({
       where: {
         status: "pending",
@@ -54,7 +53,7 @@ const RunScheduledMessagesService = async (): Promise<void> => {
           sentAt: new Date(),
           errorMessage: null
         });
-        io.emit("schedule", {
+        emitToCompany((schedule as any).companyId ?? (ticket as any).companyId, "schedule", {
           action: "update",
           schedule
         });
@@ -68,7 +67,7 @@ const RunScheduledMessagesService = async (): Promise<void> => {
           status: "failed",
           errorMessage: err instanceof Error ? err.message : "UNKNOWN_ERROR"
         });
-        io.emit("schedule", {
+        emitToCompany((schedule as any).companyId ?? null, "schedule", {
           action: "update",
           schedule
         });

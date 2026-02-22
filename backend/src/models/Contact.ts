@@ -22,6 +22,9 @@ class Contact extends Model<Contact> {
   id: number;
 
   @Column
+  companyId: number;
+
+  @Column
   name: string;
 
   @Unique

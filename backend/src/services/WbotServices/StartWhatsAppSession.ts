@@ -1,6 +1,6 @@
 import Whatsapp from "../../models/Whatsapp";
 import { whatsappProvider } from "../../providers/WhatsApp";
-import { getIO } from "../../libs/socket";
+import { emitToCompany } from "../../libs/socket";
 import { logger } from "../../utils/logger";
 
 export const StartWhatsAppSession = async (
@@ -8,8 +8,7 @@ export const StartWhatsAppSession = async (
 ): Promise<void> => {
   await whatsapp.update({ status: "OPENING" });
 
-  const io = getIO();
-  io.emit("whatsappSession", {
+  emitToCompany((whatsapp as any).companyId, "whatsappSession", {
     action: "update",
     session: whatsapp
   });

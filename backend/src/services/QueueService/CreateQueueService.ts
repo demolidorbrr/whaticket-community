@@ -1,6 +1,7 @@
 import * as Yup from "yup";
 import AppError from "../../errors/AppError";
 import Queue from "../../models/Queue";
+import { getTenantContext } from "../../libs/tenantContext";
 
 interface QueueData {
   name: string;
@@ -14,6 +15,13 @@ interface QueueData {
 }
 
 const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {
+  const tenantContext = getTenantContext();
+  const companyId = tenantContext?.companyId ?? null;
+
+  if (!companyId) {
+    throw new AppError("ERR_COMPANY_REQUIRED", 400);
+  }
+
   const normalizedQueueData = {
     ...queueData,
     aiWebhookUrl: queueData.aiWebhookUrl?.trim() || null,
@@ -32,7 +40,7 @@ const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {
         async value => {
           if (value) {
             const queueWithSameName = await Queue.findOne({
-              where: { name: value }
+              where: { name: value, companyId }
             });
 
             return !queueWithSameName;
@@ -71,7 +79,7 @@ const CreateQueueService = async (queueData: QueueData): Promise<Queue> => {
     throw new AppError(err.message);
   }
 
-  const queue = await Queue.create(normalizedQueueData);
+  const queue = await Queue.create({ ...normalizedQueueData, companyId });
 
   return queue;
 };
